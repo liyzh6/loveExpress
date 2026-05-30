@@ -1,0 +1,7 @@
+node_modules
+npm-debug.log
+miniprogram
+server
+*.rar
+.git
+.gitignore
