@@ -1,0 +1,34 @@
+{
+  "users": [
+    {
+      "id": "u_1001",
+      "username": "user001",
+      "role": "customer",
+      "name": "默认用户",
+      "salt": "2ed6e9df7c781ea9d4f6bbef",
+      "passwordHash": "38708cdbb75968c09f7eac8887e12372f156bd1a8cf07f54971b5f16851a4167",
+      "createdAt": "2026-05-31"
+    },
+    {
+      "id": "m_1001",
+      "username": "merchant001",
+      "role": "merchant",
+      "name": "默认花店",
+      "salt": "da5ec9899ba6047e86e820d7",
+      "passwordHash": "944a8ec920fb416bf97cc2316f4c5d4390ce65dcba83cfcfb5b466e49aadd417",
+      "createdAt": "2026-05-31"
+    },
+    {
+      "id": "a_1001",
+      "username": "admin001",
+      "role": "admin",
+      "name": "平台管理员",
+      "salt": "d288a2bfd3315b0a1c492c01",
+      "passwordHash": "89833e0304f50a003b56b6688e319f2ee4faed2cb95fc6ac5599319bbc27157f",
+      "createdAt": "2026-05-31"
+    }
+  ],
+  "orders": [],
+  "posts": [],
+  "comments": []
+}
