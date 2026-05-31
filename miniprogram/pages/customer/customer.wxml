@@ -1,0 +1,188 @@
+<view class="page">
+  <view class="topbar">
+    <view>
+      <text class="eyebrow">用户端</text>
+      <text class="title">定制一束刚刚好的花</text>
+    </view>
+    <button class="logout-button" bindtap="logout">退出</button>
+  </view>
+
+  <view class="segmented">
+    <view class="segment {{activePanel === 'customize' ? 'active' : ''}}" data-panel="customize" bindtap="switchPanel">定制</view>
+    <view class="segment {{activePanel === 'community' ? 'active' : ''}}" data-panel="community" bindtap="switchPanel">社区</view>
+    <view class="segment {{activePanel === 'orders' ? 'active' : ''}}" data-panel="orders" bindtap="switchPanel">我的订单</view>
+  </view>
+
+  <view wx:if="{{activePanel === 'customize'}}">
+    <view class="summary-row">
+      <view class="panel stat">
+        <text class="stat-label">预估价</text>
+        <text class="stat-value">¥{{totalPrice}}</text>
+      </view>
+      <view class="panel stat">
+        <text class="stat-label">当前风格</text>
+        <text class="stat-value small">{{selectedPalette.name}} {{selectedFlower.name}}</text>
+      </view>
+    </view>
+
+    <view class="section">
+      <view class="section-title">
+        <text>花束预览</text>
+        <text class="muted">{{selectedLayout.name}}</text>
+      </view>
+      <view class="preview-panel">
+        <view class="bouquet-stage">
+          <view class="wrap wrap-{{selectedWrapper.key}}" style="background: {{selectedPalette.wrapColor}};"></view>
+          <view class="wrap-fold"></view>
+          <view wx:for="{{previewFlowers}}" wx:key="id" class="flower-dot {{item.size}}" style="{{item.style}}">
+            <view class="flower-core"></view>
+          </view>
+          <view class="ribbon" style="background: {{selectedPalette.ribbonColor}};"></view>
+        </view>
+        <view class="preview-copy">
+          <text class="preview-name">{{selectedPalette.name}} {{selectedFlower.name}}</text>
+          <text class="preview-desc">{{selectedScenario.tone}} · {{selectedWrapper.name}}</text>
+        </view>
+      </view>
+    </view>
+
+    <view class="section">
+      <view class="section-title"><text>送花场景</text></view>
+      <view class="option-grid">
+        <view wx:for="{{scenarios}}" wx:key="id" data-index="{{index}}" bindtap="selectScenario" class="option {{scenarioIndex === index ? 'active' : ''}}">
+          <text class="option-name">{{item.name}}</text>
+          <text class="option-desc">{{item.tone}}</text>
+        </view>
+      </view>
+    </view>
+
+    <view class="section">
+      <view class="section-title"><text>主花</text></view>
+      <view class="option-grid">
+        <view wx:for="{{flowers}}" wx:key="id" data-index="{{index}}" bindtap="selectFlower" class="option {{flowerIndex === index ? 'active' : ''}}">
+          <text class="option-name">{{item.name}}</text>
+          <text class="option-desc">+ ¥{{item.price}} · {{item.meaning}}</text>
+        </view>
+      </view>
+    </view>
+
+    <view class="section">
+      <view class="section-title"><text>色系</text></view>
+      <view class="palette-row">
+        <view wx:for="{{palettes}}" wx:key="id" data-index="{{index}}" bindtap="selectPalette" class="palette {{paletteIndex === index ? 'active' : ''}}">
+          <view class="swatches">
+            <view class="swatch" style="background: {{item.colors[0]}};"></view>
+            <view class="swatch" style="background: {{item.colors[1]}};"></view>
+            <view class="swatch" style="background: {{item.colors[2]}};"></view>
+          </view>
+          <text>{{item.name}}</text>
+        </view>
+      </view>
+    </view>
+
+    <view class="section">
+      <view class="section-title"><text>花束版型</text></view>
+      <view class="option-grid">
+        <view wx:for="{{layouts}}" wx:key="id" data-index="{{index}}" bindtap="selectLayout" class="option {{layoutIndex === index ? 'active' : ''}}">
+          <text class="option-name">{{item.name}}</text>
+          <text class="option-desc">{{item.desc}}</text>
+        </view>
+      </view>
+    </view>
+
+    <view class="section">
+      <view class="section-title"><text>包装材质</text></view>
+      <view class="option-grid">
+        <view wx:for="{{wrappers}}" wx:key="id" data-index="{{index}}" bindtap="selectWrapper" class="option {{wrapperIndex === index ? 'active' : ''}}">
+          <text class="option-name">{{item.name}}</text>
+          <text class="option-desc">+ ¥{{item.price}} · {{item.desc}}</text>
+        </view>
+      </view>
+    </view>
+
+    <view class="section panel">
+      <view class="section-title"><text>配送与寄语</text></view>
+      <view class="field">
+        <text class="field-label">配送日期</text>
+        <picker mode="date" value="{{deliveryDate}}" bindchange="onDateChange">
+          <view class="picker-value">{{deliveryDate}}</view>
+        </picker>
+      </view>
+      <view class="field">
+        <text class="field-label">配送时段</text>
+        <picker mode="selector" range="{{timeSlots}}" value="{{timeSlotIndex}}" bindchange="onTimeSlotChange">
+          <view class="picker-value">{{timeSlots[timeSlotIndex]}}</view>
+        </picker>
+      </view>
+      <view class="field">
+        <text class="field-label">配送地址</text>
+        <input class="input" placeholder="例如：上海市徐汇区某某路 88 号" value="{{address}}" bindinput="onAddressInput" />
+      </view>
+      <view class="field">
+        <text class="field-label">收花人</text>
+        <input class="input" placeholder="例如：林小姐" value="{{receiver}}" bindinput="onReceiverInput" />
+      </view>
+      <view class="field">
+        <text class="field-label">联系电话</text>
+        <input class="input" type="number" placeholder="用于 Demo 展示" value="{{phone}}" bindinput="onPhoneInput" />
+      </view>
+      <view class="field">
+        <text class="field-label">寄语</text>
+        <textarea class="textarea" maxlength="80" placeholder="写一句想说的话" value="{{message}}" bindinput="onMessageInput"></textarea>
+      </view>
+      <button class="primary-button" bindtap="submitOrder">模拟支付并下单</button>
+    </view>
+  </view>
+
+  <view wx:if="{{activePanel === 'community'}}">
+    <view class="section-title">
+      <text>社区晒图</text>
+      <text class="muted">平台审核后展示</text>
+    </view>
+    <view wx:if="{{approvedPosts.length === 0}}" class="empty panel">
+      <text class="empty-title">还没有审核通过的晒图</text>
+      <text class="empty-copy">完成订单后在“我的订单”申请晒图，平台端审核通过后会出现在这里。</text>
+    </view>
+    <view wx:for="{{approvedPosts}}" wx:key="id" class="post panel">
+      <view class="post-preview">
+        <image class="post-image" src="{{item.fullImageUrl}}" mode="aspectFill"></image>
+        <view class="post-copy">
+          <text class="post-title">{{item.title}}</text>
+          <text class="post-desc">{{item.content}}</text>
+          <text class="muted">{{item.specs.flower.name}} · {{item.specs.palette.name}} · {{item.approvedAt}}</text>
+        </view>
+      </view>
+      <view class="post-actions">
+        <button class="secondary-button action-button {{item.likedByMe ? 'liked' : ''}}" data-id="{{item.id}}" bindtap="likePost">{{item.likedByMe ? '已赞' : '赞'}} {{item.likes}}</button>
+        <button class="secondary-button action-button" data-id="{{item.id}}" bindtap="commentPost">评论</button>
+      </view>
+      <view wx:if="{{item.comments.length > 0}}" class="comments">
+        <view wx:for="{{item.comments}}" wx:for-item="comment" wx:key="index" class="comment">{{comment.userName}}：{{comment.content}}</view>
+      </view>
+    </view>
+  </view>
+
+  <view wx:if="{{activePanel === 'orders'}}">
+    <view class="section-title"><text>我的订单</text></view>
+    <view wx:if="{{orders.length === 0}}" class="empty panel">
+      <text class="empty-title">还没有订单</text>
+      <text class="empty-copy">完成一次模拟下单后，可以在这里跟踪订单并申请晒图。</text>
+    </view>
+    <view wx:for="{{orders}}" wx:key="id" class="order panel">
+      <view class="order-top">
+        <view>
+          <text class="order-id">{{item.id}}</text>
+          <text class="muted">{{item.deliveryTime}}</text>
+        </view>
+        <text class="status">{{item.status}}</text>
+      </view>
+      <text class="order-name">{{item.specs.palette.name}} {{item.specs.flower.name}} · ¥{{item.totalPrice}}</text>
+      <text class="info-line">地址：{{item.address}}</text>
+      <text class="info-line">寄语：{{item.message}}</text>
+      <text class="info-line">结算：{{item.settlementStatus}}</text>
+      <button wx:if="{{item.canConfirmReceipt}}" class="primary-button compact" data-id="{{item.id}}" bindtap="confirmReceipt">已收到</button>
+      <button wx:if="{{item.canShare}}" class="primary-button compact" data-id="{{item.id}}" bindtap="requestPostReview">申请晒图审核</button>
+      <button wx:elif="{{item.postStatusText}}" class="secondary-button compact" disabled>{{item.postStatusText}}</button>
+    </view>
+  </view>
+</view>

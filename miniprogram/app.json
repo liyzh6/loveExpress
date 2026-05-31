@@ -1,0 +1,18 @@
+{
+  "pages": [
+    "pages/login/login",
+    "pages/merchant-login/merchant-login",
+    "pages/admin-login/admin-login",
+    "pages/customer/customer",
+    "pages/merchant/merchant",
+    "pages/admin/admin"
+  ],
+  "window": {
+    "navigationBarTitleText": "花束平台",
+    "navigationBarBackgroundColor": "#ffffff",
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#f7f5f0"
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}
