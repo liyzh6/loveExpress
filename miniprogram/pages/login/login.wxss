@@ -1,0 +1,71 @@
+.login-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  padding-top: 72rpx;
+}
+
+.brand {
+  margin-bottom: 52rpx;
+  text-align: center;
+}
+
+.brand-logo {
+  display: block;
+  width: 520rpx;
+  height: 150rpx;
+  margin: 0 auto;
+}
+
+.slogan {
+  display: block;
+  margin-top: 22rpx;
+  color: #2b2b2b;
+  font-size: 32rpx;
+  font-weight: 700;
+}
+
+.login-form {
+  margin-top: 8rpx;
+}
+
+.login-input {
+  width: 100%;
+  height: 88rpx;
+  box-sizing: border-box;
+  margin-bottom: 18rpx;
+  padding: 0 24rpx;
+  border: 1rpx solid #e7dfd5;
+  border-radius: 8rpx;
+  background: #ffffff;
+  font-size: 28rpx;
+}
+
+.form-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16rpx;
+  margin-top: 10rpx;
+}
+
+.form-button {
+  height: 82rpx;
+  line-height: normal;
+  margin-top: 0;
+  padding: 0;
+}
+
+.role-links {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18rpx;
+  margin-top: auto;
+  padding-bottom: 46rpx;
+}
+
+.role-link,
+.role-divider {
+  color: #6d675f;
+  font-size: 24rpx;
+}

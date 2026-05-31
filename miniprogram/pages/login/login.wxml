@@ -1,0 +1,21 @@
+<view class="page login-page">
+  <view class="brand">
+    <image class="brand-logo" src="../../assets/brand-logo.jpg" mode="aspectFit"></image>
+    <text class="slogan">爱的表达，爱的速递</text>
+  </view>
+
+  <view class="login-form">
+    <input class="login-input" placeholder="用户账号" value="{{username}}" bindinput="onUsernameInput" />
+    <input class="login-input" password placeholder="密码" value="{{password}}" bindinput="onPasswordInput" />
+    <view class="form-actions">
+      <button class="secondary-button form-button" bindtap="register">注册</button>
+      <button class="primary-button form-button" bindtap="loginCustomer">登录</button>
+    </view>
+  </view>
+
+  <view class="role-links">
+    <text class="role-link" bindtap="goMerchantLogin">店家登录</text>
+    <text class="role-divider">|</text>
+    <text class="role-link" bindtap="goAdminLogin">平台登录</text>
+  </view>
+</view>

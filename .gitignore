@@ -1,0 +1,11 @@
+node_modules/
+server/node_modules/
+*.log
+*.rar
+/data/
+server/data/*
+!server/data/db.json
+uploads/*
+!uploads/.gitkeep
+server/uploads/*
+!server/uploads/.gitkeep

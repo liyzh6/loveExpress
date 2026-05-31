@@ -1,122 +1,67 @@
-# wxcloudrun-express
+# 花束半定制微信小程序
 
-[![GitHub license](https://img.shields.io/github/license/WeixinCloud/wxcloudrun-express)](https://github.com/WeixinCloud/wxcloudrun-express)
-![GitHub package.json dependency version (prod)](https://img.shields.io/github/package-json/dependency-version/WeixinCloud/wxcloudrun-express/express)
-![GitHub package.json dependency version (prod)](https://img.shields.io/github/package-json/dependency-version/WeixinCloud/wxcloudrun-express/sequelize)
+这是一个微信小程序 + Node.js 后端的花束定制平台雏形，包含用户端、店家端、平台端、订单接口、图片上传、角色权限和社区审核流程。后端基于微信云托管 `wxcloudrun-express` 模板二次开发。
 
-微信云托管 Node.js Express 框架模版，实现简单的计数器读写接口，使用云托管 MySQL 读写、记录计数值。
+## 运行方式
 
-![](https://qcloudimg.tencent-cloud.cn/raw/be22992d297d1b9a1a5365e606276781.png)
+1. 进入后端目录并安装依赖：
 
-## 快速开始
-
-前往 [微信云托管快速开始页面](https://cloud.weixin.qq.com/cloudrun/onekey)，选择相应语言的模板，根据引导完成部署。
-
-## 本地调试
-下载代码在本地调试，请参考[微信云托管本地调试指南](https://developers.weixin.qq.com/miniprogram/dev/wxcloudrun/src/guide/debug/)
-
-## 实时开发
-代码变动时，不需要重新构建和启动容器，即可查看变动后的效果。请参考[微信云托管实时开发指南](https://developers.weixin.qq.com/miniprogram/dev/wxcloudrun/src/guide/debug/dev.html)
-
-## Dockerfile最佳实践
-请参考[如何提高项目构建效率](https://developers.weixin.qq.com/miniprogram/dev/wxcloudrun/src/scene/build/speed.html)
-
-## 项目结构说明
-
-```
-.
-├── Dockerfile
-├── README.md
-├── container.config.json
-├── db.js
-├── index.js
-├── index.html
-├── package.json
+```bash
+cd server
+npm install
 ```
 
-- `index.js`：项目入口，实现主要的读写 API
-- `db.js`：数据库相关实现，使用 `sequelize` 作为 ORM
-- `index.html`：首页代码
-- `package.json`：Node.js 项目定义文件
-- `container.config.json`：模板部署「服务设置」初始化配置（二开请忽略）
-- `Dockerfile`：容器配置文件
+2. 启动后端：
 
-## 服务 API 文档
-
-### `GET /api/count`
-
-获取当前计数
-
-#### 请求参数
-
-无
-
-#### 响应结果
-
-- `code`：错误码
-- `data`：当前计数值
-
-##### 响应结果示例
-
-```json
-{
-  "code": 0,
-  "data": 42
-}
+```bash
+npm start
 ```
 
-#### 调用示例
+3. 打开微信开发者工具。
+4. 选择“导入项目”。
+5. 项目目录选择当前文件夹：`C:\Users\liyiz\Documents\爱的express`。
+6. AppID 可选择测试号，或继续使用 `touristappid`。
+7. 编译运行。
 
-```
-curl https://<云托管服务域名>/api/count
-```
+小程序当前接口地址在 [app.js](</C:/Users/liyiz/Documents/爱的express/miniprogram/app.js>) 中配置为你的微信云托管域名：
 
-### `POST /api/count`
-
-更新计数，自增或者清零
-
-#### 请求参数
-
-- `action`：`string` 类型，枚举值
-  - 等于 `"inc"` 时，表示计数加一
-  - 等于 `"clear"` 时，表示计数重置（清零）
-
-##### 请求参数示例
-
-```
-{
-  "action": "inc"
-}
+```js
+apiBaseUrl: "https://express-ydos-264225-8-1438597910.sh.run.tcloudbase.com"
 ```
 
-#### 响应结果
+## 已实现功能
 
-- `code`：错误码
-- `data`：当前计数值
+- 登录页：用户账号注册、账号密码登录，店家和平台从底部入口登录，后端签发 token。
+- 用户端：半定制花束、自动生成默认寄语、填写配送地址、提交订单、确认收货、上传晒图、浏览社区。
+- 店家端：查看订单、预览效果、配送地址、配送时间、寄语和制作要求，按顺序更新订单状态。
+- 平台端：查看全部订单、订单流水、平台抽佣，审核用户上传的社区晒图。
+- 社区：平台审核通过后展示晒图内容，用户可点赞、取消点赞和评论。
 
-##### 响应结果示例
+## 后端说明
 
-```json
-{
-  "code": 0,
-  "data": 42
-}
-```
+后端部署目录为 [server](</C:/Users/liyiz/Documents/爱的express/server>)，结构遵循微信云托管 Express 模板：`index.js`、`package.json`、`Dockerfile`、`container.config.json`。
 
-#### 调用示例
+- 数据文件：[db.json](</C:/Users/liyiz/Documents/爱的express/server/data/db.json>)
+- 数据库模块：[db.js](</C:/Users/liyiz/Documents/爱的express/server/db.js>)
+- 上传图片：[uploads](</C:/Users/liyiz/Documents/爱的express/server/uploads>)
+- 云托管地址：`https://express-ydos-264225-8-1438597910.sh.run.tcloudbase.com`
 
-```
-curl -X POST -H 'content-type: application/json' -d '{"action": "inc"}' https://<云托管服务域名>/api/count
-```
+预置账号：
 
-## 使用注意
-如果不是通过微信云托管控制台部署模板代码，而是自行复制/下载模板代码后，手动新建一个服务并部署，需要在「服务设置」中补全以下环境变量，才可正常使用，否则会引发无法连接数据库，进而导致部署失败。
-- MYSQL_ADDRESS
-- MYSQL_PASSWORD
-- MYSQL_USERNAME
-以上三个变量的值请按实际情况填写。如果使用云托管内MySQL，可以在控制台MySQL页面获取相关信息。
+- 用户：`user001` / `123456`
+- 店家：`merchant001` / `123456`
+- 平台：`admin001` / `123456`
 
+## 云托管上传目录
 
-## License
+后端更新时只上传 `server/` 目录内容到云托管或对应 GitHub 仓库。不要上传 `miniprogram/`、`node_modules/`、`.git/`、压缩包等无关文件。
 
-[MIT](./LICENSE)
+## 待补充
+
+- 微信支付 JSAPI。
+- 微信 `wx.login` 与真实用户体系绑定。
+- 数据库替换本地 JSON 文件。
+- 花材库存。
+- 图片合成或 Canvas 导出。
+- 内容安全审核和风控。
+- 订阅消息和售后流程。
