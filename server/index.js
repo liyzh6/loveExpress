@@ -135,6 +135,16 @@ app.get("/api/health", (req, res) => {
   res.json({ ok: true, service: "aide-express", date: db.localDate() });
 });
 
+app.get("/api/deploy-info", (req, res) => {
+  res.json({
+    ok: true,
+    service: "aide-express",
+    entry: "server/index.js",
+    features: ["login", "orders", "community", "bouquet-assets"],
+    deployedAt: process.env.DEPLOYED_AT || "local"
+  });
+});
+
 app.get("/api/count", (req, res) => {
   res.json({ code: 0, data: 1 });
 });
