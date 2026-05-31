@@ -187,6 +187,7 @@ app.get("/api/deploy-info", (req, res) => {
     service: "aide-express",
     entry: "server/index.js",
     features: ["login", "orders", "community", "bouquet-assets", "wechat-pay"],
+    storage: db.storageMode(),
     deployedAt: process.env.DEPLOYED_AT || "local"
   });
 });
@@ -584,6 +585,11 @@ app.use((req, res) => {
   res.status(404).json({ message: "接口不存在" });
 });
 
-app.listen(PORT, () => {
-  console.log(`爱的 Express API listening on ${PORT}`);
+db.initialize().then(() => {
+  app.listen(PORT, () => {
+    console.log(`爱的 Express API listening on ${PORT}, storage=${db.storageMode()}`);
+  });
+}).catch((error) => {
+  console.error("Failed to start API:", error);
+  process.exit(1);
 });
