@@ -81,6 +81,18 @@ WECHAT_PAY_NOTIFY_URL
 WECHAT_REFUND_NOTIFY_URL
 ```
 
+微信云托管支付配置建议：
+- 在「服务设置 - 环境变量」中新增上述变量，私钥可以把换行替换为 `\n` 后粘贴。
+- `WECHAT_PAY_NOTIFY_URL` 填：`https://express-ydos-264225-8-1438597910.sh.run.tcloudbase.com/api/payments/wechat/notify`
+- `WECHAT_REFUND_NOTIFY_URL` 填：`https://express-ydos-264225-8-1438597910.sh.run.tcloudbase.com/api/payments/wechat/refund-notify`
+- `WECHAT_PAY_APP_ID` 与小程序 AppID 保持一致；`WECHAT_PAY_MCH_ID` 使用微信支付商户号。
+- `WECHAT_APPID` 和 `WECHAT_SECRET` 用于 `wx.login` 换取 openid，JSAPI 支付必须拿到 openid。
+- 不要把商户私钥、APIv3 密钥、平台公钥提交到 GitHub。
+
+用户端地址能力：
+- 小程序已声明 `chooseLocation`，用户可在下单页通过地图选择配送地址。
+- 手机号会在小程序端和后端同时校验，仅接受 11 位中国大陆手机号。
+
 订单规则：
 
 ```text

@@ -69,13 +69,15 @@ Page({
   async loginWithRole(role) {
     if (!this.validateForm()) return;
     try {
+      const loginRes = role === "customer" ? await this.wxLogin() : {};
       const session = await api.request({
         url: "/api/login",
         method: "POST",
         data: {
           username: this.data.username,
           password: this.data.password,
-          role
+          role,
+          wechatCode: loginRes.code || ""
         }
       });
       app.setSession(session);

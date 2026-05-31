@@ -54,6 +54,29 @@ app.post("/api/payments/wechat/notify", express.raw({ type: "application/json" }
   }
 });
 
+app.post("/api/payments/wechat/refund-notify", express.raw({ type: "application/json" }), (req, res) => {
+  try {
+    const rawBody = req.body.toString("utf8");
+    if (!payment.verifyNotifySignature(req.headers, rawBody)) {
+      throw new Error("微信退款回调验签失败");
+    }
+    const payload = JSON.parse(rawBody);
+    const refund = payment.decryptNotifyResource(payload.resource);
+    db.withDb((store) => {
+      const order = store.orders.find((item) => item.id === refund.out_trade_no);
+      if (order && refund.refund_status === "SUCCESS") {
+        order.status = "已退款";
+        order.paymentStatus = "已退款";
+        order.settlementStatus = "已退款";
+        logOperation(store, "system", "refund.notify", order.id, "微信退款回调确认退款成功");
+      }
+    });
+    res.json({ code: "SUCCESS", message: "成功" });
+  } catch (error) {
+    res.status(400).json({ code: "FAIL", message: error.message || "失败" });
+  }
+});
+
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: false }));
 app.use("/uploads", express.static(UPLOAD_DIR));
@@ -127,6 +150,29 @@ function publicPost(post, user) {
   });
 }
 
+function normalizePhone(phone) {
+  return String(phone || "").replace(/[^\d]/g, "");
+}
+
+function isValidMainlandMobile(phone) {
+  return /^1[3-9]\d{9}$/.test(normalizePhone(phone));
+}
+
+function validateOrderPayload(body) {
+  const receiver = String(body.receiver || "").trim();
+  const phone = normalizePhone(body.phone);
+  const address = String(body.address || "").trim();
+  if (!receiver) throw new Error("请填写收花人");
+  if (!isValidMainlandMobile(phone)) throw new Error("手机号格式不正确");
+  if (address.length < 6) throw new Error("配送地址不完整");
+  if (body.location) {
+    const latitude = Number(body.location.latitude);
+    const longitude = Number(body.location.longitude);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) throw new Error("配送定位信息不正确");
+  }
+  return { receiver, phone, address };
+}
+
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "index.html"));
 });
@@ -140,7 +186,7 @@ app.get("/api/deploy-info", (req, res) => {
     ok: true,
     service: "aide-express",
     entry: "server/index.js",
-    features: ["login", "orders", "community", "bouquet-assets"],
+    features: ["login", "orders", "community", "bouquet-assets", "wechat-pay"],
     deployedAt: process.env.DEPLOYED_AT || "local"
   });
 });
@@ -180,19 +226,37 @@ app.post("/api/register", (req, res) => {
   });
 });
 
-app.post("/api/login", (req, res) => {
+app.post("/api/login", async (req, res) => {
   const username = String(req.body.username || "").trim();
   const password = String(req.body.password || "");
-  const store = db.readDb();
-  const user = store.users.find((item) => item.username === username && item.role === req.body.role);
-  if (!user || user.passwordHash !== db.hashPassword(password, user.salt)) {
-    res.status(401).json({ message: "账号、密码或身份不正确" });
-    return;
+  let openid = "";
+  try {
+    if (req.body.wechatCode) {
+      const wechatSession = await wechat.verifyLoginCode(req.body.wechatCode);
+      openid = wechatSession.openid;
+    }
+    const user = db.withDb((store) => {
+      const target = store.users.find((item) => item.username === username && item.role === req.body.role);
+      if (!target || target.passwordHash !== db.hashPassword(password, target.salt)) {
+        throw new Error("账号、密码或身份不正确");
+      }
+      if (openid && target.role === "customer") {
+        const usedByOther = store.users.some((item) => item.id !== target.id && item.wechatOpenid === openid);
+        if (usedByOther) throw new Error("该微信账号已绑定其他用户");
+        if (!target.wechatOpenid) {
+          target.wechatOpenid = openid;
+          logOperation(store, target.id, "user.bind_wechat", target.id, "用户登录时绑定微信 openid");
+        }
+      }
+      return target;
+    });
+    const token = crypto.randomBytes(24).toString("hex");
+    const safeUser = db.publicUser(user);
+    sessions.set(token, safeUser);
+    res.json({ token, user: safeUser });
+  } catch (error) {
+    res.status(error.message === "账号、密码或身份不正确" ? 401 : 400).json({ message: error.message || "登录失败" });
   }
-  const token = crypto.randomBytes(24).toString("hex");
-  const safeUser = db.publicUser(user);
-  sessions.set(token, safeUser);
-  res.json({ token, user: safeUser });
 });
 
 app.get("/api/accounts", requireRole(["admin"]), (req, res) => {
@@ -210,24 +274,32 @@ app.get("/api/orders", requireRole(["customer", "merchant", "admin"]), (req, res
 });
 
 app.post("/api/orders", requireRole(["customer"]), (req, res) => {
-  const order = db.withDb((store) => {
-    const commission = Math.round((req.body.totalPrice || 0) * 0.12);
-    const nextOrder = Object.assign({}, req.body, {
-      id: `B${Date.now()}`,
-      customerId: req.user.id,
-      status: "待支付",
-      paymentStatus: "待支付",
-      createdAt: db.localDate(),
-      commission,
-      escrowAmount: req.body.totalPrice || 0,
-      merchantReceivable: (req.body.totalPrice || 0) - commission,
-      settlementStatus: "平台托管"
+  try {
+    const delivery = validateOrderPayload(req.body);
+    const order = db.withDb((store) => {
+      const commission = Math.round((req.body.totalPrice || 0) * 0.12);
+      const nextOrder = Object.assign({}, req.body, {
+        receiver: delivery.receiver,
+        phone: delivery.phone,
+        address: delivery.address,
+        id: `B${Date.now()}`,
+        customerId: req.user.id,
+        status: "待支付",
+        paymentStatus: "待支付",
+        createdAt: db.localDate(),
+        commission,
+        escrowAmount: req.body.totalPrice || 0,
+        merchantReceivable: (req.body.totalPrice || 0) - commission,
+        settlementStatus: "平台托管"
+      });
+      store.orders.unshift(nextOrder);
+      logOperation(store, req.user.id, "order.create", nextOrder.id, "用户创建订单，资金进入平台托管流程");
+      return nextOrder;
     });
-    store.orders.unshift(nextOrder);
-    logOperation(store, req.user.id, "order.create", nextOrder.id, "用户创建订单，资金进入平台托管流程");
-    return nextOrder;
-  });
-  res.status(201).json({ order });
+    res.status(201).json({ order });
+  } catch (error) {
+    res.status(400).json({ message: error.message || "下单失败" });
+  }
 });
 
 app.patch("/api/orders/:id/status", requireRole(["merchant", "admin"]), (req, res) => {

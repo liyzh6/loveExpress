@@ -117,7 +117,11 @@
       </view>
       <view class="field">
         <text class="field-label">配送地址</text>
-        <input class="input" placeholder="例如：上海市徐汇区某某路 88 号" value="{{address}}" bindinput="onAddressInput" />
+        <view class="address-row">
+          <input class="input address-input" placeholder="请选择或填写详细配送地址" value="{{address}}" bindinput="onAddressInput" />
+          <button class="map-button" bindtap="chooseAddress">地图选址</button>
+        </view>
+        <text wx:if="{{addressError}}" class="field-error">{{addressError}}</text>
       </view>
       <view class="field">
         <text class="field-label">收花人</text>
@@ -125,7 +129,8 @@
       </view>
       <view class="field">
         <text class="field-label">联系电话</text>
-        <input class="input" type="number" placeholder="用于 Demo 展示" value="{{phone}}" bindinput="onPhoneInput" />
+        <input class="input" type="number" maxlength="11" placeholder="请输入 11 位手机号" value="{{phone}}" bindinput="onPhoneInput" />
+        <text wx:if="{{phoneError}}" class="field-error">{{phoneError}}</text>
       </view>
       <view class="field">
         <text class="field-label">寄语</text>

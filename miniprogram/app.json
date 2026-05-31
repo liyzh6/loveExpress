@@ -13,6 +13,14 @@
     "navigationBarTextStyle": "black",
     "backgroundColor": "#f7f5f0"
   },
+  "permission": {
+    "scope.userLocation": {
+      "desc": "用于选择收花地址和计算配送位置"
+    }
+  },
+  "requiredPrivateInfos": [
+    "chooseLocation"
+  ],
   "style": "v2",
   "sitemapLocation": "sitemap.json"
 }

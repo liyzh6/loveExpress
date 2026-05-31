@@ -6,7 +6,8 @@ function configured() {
     process.env.WECHAT_PAY_MCH_ID &&
     process.env.WECHAT_PAY_APP_ID &&
     process.env.WECHAT_PAY_SERIAL_NO &&
-    process.env.WECHAT_PAY_PRIVATE_KEY
+    process.env.WECHAT_PAY_PRIVATE_KEY &&
+    process.env.WECHAT_PAY_NOTIFY_URL
   );
 }
 

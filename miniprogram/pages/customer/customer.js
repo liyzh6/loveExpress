@@ -8,6 +8,14 @@ function formatDate(date) {
   return `${year}-${month}-${day}`;
 }
 
+function normalizePhone(phone) {
+  return String(phone || "").replace(/[^\d]/g, "");
+}
+
+function isValidMobile(phone) {
+  return /^1[3-9]\d{9}$/.test(normalizePhone(phone));
+}
+
 Page({
   data: {
     activePanel: "customize",
@@ -21,6 +29,11 @@ Page({
     receiver: "",
     phone: "",
     address: "",
+    addressName: "",
+    latitude: null,
+    longitude: null,
+    phoneError: "",
+    addressError: "",
     message: "愿这束花替我把今天变得更温柔。",
     messageTouched: false,
     orders: [],
@@ -119,15 +132,45 @@ Page({
   },
 
   onPhoneInput(event) {
-    this.setData({ phone: event.detail.value });
+    const phone = normalizePhone(event.detail.value).slice(0, 11);
+    this.setData({
+      phone,
+      phoneError: phone.length === 11 && !isValidMobile(phone) ? "请输入有效的中国大陆手机号" : ""
+    });
   },
 
   onAddressInput(event) {
-    this.setData({ address: event.detail.value });
+    const address = event.detail.value;
+    this.setData({
+      address,
+      addressName: "",
+      latitude: null,
+      longitude: null,
+      addressError: address.trim().length >= 6 ? "" : "请填写更完整的配送地址"
+    });
   },
 
   onMessageInput(event) {
     this.setData({ message: event.detail.value, messageTouched: true });
+  },
+
+  chooseAddress() {
+    wx.chooseLocation({
+      success: (res) => {
+        const address = [res.address, res.name].filter(Boolean).join(" ");
+        this.setData({
+          address,
+          addressName: res.name || "",
+          latitude: res.latitude,
+          longitude: res.longitude,
+          addressError: ""
+        });
+      },
+      fail: (error) => {
+        if (error.errMsg && error.errMsg.indexOf("cancel") >= 0) return;
+        wx.showToast({ title: "无法打开地图选址", icon: "none" });
+      }
+    });
   },
 
   refreshSelection() {
@@ -170,15 +213,38 @@ Page({
     }));
   },
 
+  validateDeliveryInfo() {
+    const receiver = this.data.receiver.trim();
+    const phone = normalizePhone(this.data.phone);
+    const address = this.data.address.trim();
+    if (!receiver) return "请填写收花人";
+    if (!isValidMobile(phone)) {
+      this.setData({ phoneError: "请输入有效的中国大陆手机号" });
+      return "手机号格式不正确";
+    }
+    if (address.length < 6) {
+      this.setData({ addressError: "请填写更完整的配送地址，建议使用地图选址" });
+      return "配送地址不完整";
+    }
+    this.setData({ phone, phoneError: "", addressError: "" });
+    return "";
+  },
+
   async submitOrder() {
-    if (!this.data.receiver || !this.data.phone || !this.data.address) {
-      wx.showToast({ title: "请填写收花人、电话和地址", icon: "none" });
+    const validationError = this.validateDeliveryInfo();
+    if (validationError) {
+      wx.showToast({ title: validationError, icon: "none" });
       return;
     }
     const order = {
-      receiver: this.data.receiver,
-      phone: this.data.phone,
-      address: this.data.address,
+      receiver: this.data.receiver.trim(),
+      phone: normalizePhone(this.data.phone),
+      address: this.data.address.trim(),
+      addressName: this.data.addressName,
+      location: this.data.latitude && this.data.longitude ? {
+        latitude: this.data.latitude,
+        longitude: this.data.longitude
+      } : null,
       deliveryTime: `${this.data.deliveryDate} ${this.data.timeSlots[this.data.timeSlotIndex]}`,
       message: this.data.message,
       totalPrice: this.data.totalPrice,
@@ -201,7 +267,7 @@ Page({
       } else {
         wx.showToast({ title: "订单已创建，微信支付待配置", icon: "none" });
       }
-      this.setData({ activePanel: "orders", receiver: "", phone: "", address: "" });
+      this.setData({ activePanel: "orders", receiver: "", phone: "", address: "", addressName: "", latitude: null, longitude: null });
       this.loadOrders();
       if (payRes.configured) wx.showToast({ title: "下单成功", icon: "success" });
     } catch (error) {

@@ -286,6 +286,35 @@
   padding: 0 18rpx;
 }
 
+.address-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 160rpx;
+  gap: 12rpx;
+  align-items: center;
+}
+
+.address-input {
+  min-width: 0;
+}
+
+.map-button {
+  height: 82rpx;
+  line-height: 82rpx;
+  margin: 0;
+  padding: 0;
+  border-radius: 8rpx;
+  background: #2f5d50;
+  color: #ffffff;
+  font-size: 24rpx;
+}
+
+.field-error {
+  display: block;
+  margin-top: 10rpx;
+  color: #b94a48;
+  font-size: 23rpx;
+}
+
 .textarea {
   min-height: 140rpx;
   padding: 18rpx;
