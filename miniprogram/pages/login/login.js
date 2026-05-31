@@ -7,6 +7,14 @@ Page({
     password: ""
   },
 
+  onLoad() {
+    const saved = wx.getStorageSync("lastCustomerLogin") || {};
+    this.setData({
+      username: saved.username || "",
+      password: saved.password || ""
+    });
+  },
+
   onUsernameInput(event) {
     this.setData({ username: event.detail.value.trim() });
   },
@@ -18,13 +26,19 @@ Page({
   async register() {
     if (!this.validateForm()) return;
     try {
+      const loginRes = await this.wxLogin();
       await api.request({
         url: "/api/register",
         method: "POST",
         data: {
           username: this.data.username,
-          password: this.data.password
+          password: this.data.password,
+          wechatCode: loginRes.code
         }
+      });
+      wx.setStorageSync("lastCustomerLogin", {
+        username: this.data.username,
+        password: this.data.password
       });
       wx.showToast({ title: "注册成功", icon: "success" });
     } catch (error) {
@@ -65,6 +79,12 @@ Page({
         }
       });
       app.setSession(session);
+      if (role === "customer") {
+        wx.setStorageSync("lastCustomerLogin", {
+          username: this.data.username,
+          password: this.data.password
+        });
+      }
       const pageMap = {
         customer: "/pages/customer/customer",
         merchant: "/pages/merchant/merchant",
@@ -74,5 +94,14 @@ Page({
     } catch (error) {
       wx.showToast({ title: error.message || "登录失败", icon: "none" });
     }
+  },
+
+  wxLogin() {
+    return new Promise((resolve, reject) => {
+      wx.login({
+        success: resolve,
+        fail: reject
+      });
+    });
   }
 });

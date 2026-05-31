@@ -107,6 +107,18 @@
   overflow: hidden;
 }
 
+.bouquet-image {
+  flex: 0 0 260rpx;
+  width: 260rpx;
+  height: 260rpx;
+  border-radius: 8rpx;
+  background: #fffaf4;
+}
+
+.fallback-stage {
+  display: none;
+}
+
 .wrap {
   position: absolute;
   left: 39rpx;

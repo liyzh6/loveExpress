@@ -1,7 +1,12 @@
 {
   "description": "Bouquet customizer demo mini program",
   "packOptions": {
-    "ignore": []
+    "ignore": [
+      {
+        "type": "folder",
+        "value": "miniprogram/assets/bouquets"
+      }
+    ]
   },
   "setting": {
     "urlCheck": false,

@@ -55,8 +55,22 @@ function request(options) {
 }
 
 function uploadPost(data) {
-  if (app.globalData.useCloudContainer) {
-    return Promise.reject(new Error("云托管内网调用暂不支持直接 multipart 上传，请先使用公网 uploadFile 域名或改为云存储上传。"));
+  if (app.globalData.useCloudContainer && wx.cloud && wx.cloud.uploadFile) {
+    const ext = data.filePath && data.filePath.includes(".") ? data.filePath.slice(data.filePath.lastIndexOf(".")) : ".jpg";
+    const cloudPath = `community/${Date.now()}-${Math.floor(Math.random() * 100000)}${ext}`;
+    return wx.cloud.uploadFile({
+      cloudPath,
+      filePath: data.filePath
+    }).then((uploadRes) => request({
+      url: "/api/posts",
+      method: "POST",
+      data: {
+        orderId: data.orderId,
+        title: data.title,
+        content: data.content,
+        fileID: uploadRes.fileID
+      }
+    }));
   }
 
   return new Promise((resolve, reject) => {

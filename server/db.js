@@ -42,7 +42,15 @@ function publicUser(user) {
 function ensureDb() {
   fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true });
   if (!fs.existsSync(DATA_FILE)) {
-    fs.writeFileSync(DATA_FILE, JSON.stringify({ users: [], orders: [], posts: [], comments: [] }, null, 2));
+    fs.writeFileSync(DATA_FILE, JSON.stringify({
+      users: [],
+      orders: [],
+      posts: [],
+      comments: [],
+      refundRequests: [],
+      disputes: [],
+      operationLogs: []
+    }, null, 2));
   }
 }
 
@@ -73,6 +81,9 @@ function readDb() {
   db.orders = db.orders || [];
   db.posts = db.posts || [];
   db.comments = db.comments || [];
+  db.refundRequests = db.refundRequests || [];
+  db.disputes = db.disputes || [];
+  db.operationLogs = db.operationLogs || [];
   seedSystemAccounts(db);
   return db;
 }
@@ -90,5 +101,6 @@ module.exports = {
   localDate,
   publicUser,
   readDb,
-  withDb
+  withDb,
+  writeDb
 };

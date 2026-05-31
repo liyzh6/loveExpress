@@ -61,6 +61,7 @@ Page({
     selectedLayout: {},
     selectedWrapper: {},
     previewFlowers: [],
+    previewImage: "",
     totalPrice: 0
   },
 
@@ -136,8 +137,9 @@ Page({
     const selectedLayout = this.data.layouts[this.data.layoutIndex];
     const selectedWrapper = this.data.wrappers[this.data.wrapperIndex];
     const previewFlowers = this.buildPreview(selectedPalette, selectedLayout);
+    const previewImage = `${app.globalData.apiBaseUrl}/assets/bouquets/${selectedScenario.id}_${selectedFlower.id}_${selectedPalette.id}_${selectedLayout.id}_${selectedWrapper.id}.png`;
     const totalPrice = 99 + selectedFlower.price + selectedWrapper.price;
-    const nextData = { selectedScenario, selectedFlower, selectedPalette, selectedLayout, selectedWrapper, previewFlowers, totalPrice };
+    const nextData = { selectedScenario, selectedFlower, selectedPalette, selectedLayout, selectedWrapper, previewFlowers, previewImage, totalPrice };
     if (!this.data.messageTouched) {
       nextData.message = this.buildMessage(selectedScenario, selectedFlower);
     }
@@ -181,6 +183,7 @@ Page({
       message: this.data.message,
       totalPrice: this.data.totalPrice,
       commission: Math.round(this.data.totalPrice * 0.12),
+      previewImage: this.data.previewImage,
       specs: {
         scenario: this.data.selectedScenario,
         flower: this.data.selectedFlower,
@@ -191,13 +194,29 @@ Page({
       previewFlowers: this.data.previewFlowers
     };
     try {
-      await api.request({ url: "/api/orders", method: "POST", data: order });
+      const created = await api.request({ url: "/api/orders", method: "POST", data: order });
+      const payRes = await api.request({ url: `/api/orders/${created.order.id}/payments/wechat/prepay`, method: "POST" });
+      if (payRes.configured && payRes.payment) {
+        await this.requestPayment(payRes.payment);
+      } else {
+        wx.showToast({ title: "订单已创建，微信支付待配置", icon: "none" });
+      }
       this.setData({ activePanel: "orders", receiver: "", phone: "", address: "" });
       this.loadOrders();
-      wx.showToast({ title: "下单成功", icon: "success" });
+      if (payRes.configured) wx.showToast({ title: "下单成功", icon: "success" });
     } catch (error) {
       wx.showToast({ title: error.message || "下单失败", icon: "none" });
     }
+  },
+
+  requestPayment(payment) {
+    return new Promise((resolve, reject) => {
+      wx.requestPayment({
+        ...payment,
+        success: resolve,
+        fail: reject
+      });
+    });
   },
 
   async loadOrders() {
@@ -225,7 +244,7 @@ Page({
     try {
       const res = await api.request({ url: "/api/posts?status=已通过" });
       const approvedPosts = (res.posts || []).map((post) => Object.assign({}, post, {
-        fullImageUrl: `${app.globalData.apiBaseUrl}${post.imageUrl}`
+        fullImageUrl: post.imageUrl && post.imageUrl.indexOf("cloud://") === 0 ? post.imageUrl : `${app.globalData.apiBaseUrl}${post.imageUrl}`
       }));
       this.setData({ approvedPosts });
     } catch (error) {

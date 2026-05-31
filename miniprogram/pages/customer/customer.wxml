@@ -31,7 +31,8 @@
         <text class="muted">{{selectedLayout.name}}</text>
       </view>
       <view class="preview-panel">
-        <view class="bouquet-stage">
+        <image class="bouquet-image" src="{{previewImage}}" mode="aspectFit"></image>
+        <view class="bouquet-stage fallback-stage">
           <view class="wrap wrap-{{selectedWrapper.key}}" style="background: {{selectedPalette.wrapColor}};"></view>
           <view class="wrap-fold"></view>
           <view wx:for="{{previewFlowers}}" wx:key="id" class="flower-dot {{item.size}}" style="{{item.style}}">
@@ -130,7 +131,7 @@
         <text class="field-label">寄语</text>
         <textarea class="textarea" maxlength="80" placeholder="写一句想说的话" value="{{message}}" bindinput="onMessageInput"></textarea>
       </view>
-      <button class="primary-button" bindtap="submitOrder">模拟支付并下单</button>
+      <button class="primary-button" bindtap="submitOrder">微信支付并下单</button>
     </view>
   </view>
 
@@ -179,6 +180,7 @@
       <text class="order-name">{{item.specs.palette.name}} {{item.specs.flower.name}} · ¥{{item.totalPrice}}</text>
       <text class="info-line">地址：{{item.address}}</text>
       <text class="info-line">寄语：{{item.message}}</text>
+      <text class="info-line">支付：{{item.paymentStatus}}</text>
       <text class="info-line">结算：{{item.settlementStatus}}</text>
       <button wx:if="{{item.canConfirmReceipt}}" class="primary-button compact" data-id="{{item.id}}" bindtap="confirmReceipt">已收到</button>
       <button wx:if="{{item.canShare}}" class="primary-button compact" data-id="{{item.id}}" bindtap="requestPostReview">申请晒图审核</button>

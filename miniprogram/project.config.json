@@ -27,7 +27,12 @@
   "compileType": "miniprogram",
   "simulatorPluginLibVersion": {},
   "packOptions": {
-    "ignore": [],
+    "ignore": [
+      {
+        "type": "folder",
+        "value": "assets/bouquets"
+      }
+    ],
     "include": []
   },
   "appid": "wx9ae4b8d3354e991c",

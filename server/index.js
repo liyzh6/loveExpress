@@ -8,13 +8,19 @@ const morgan = require("morgan");
 const multer = require("multer");
 
 const db = require("./db");
+const payment = require("./payment");
+const storage = require("./storage");
+const wechat = require("./wechat");
+const refundAndDispute = require("./refund-and-dispute");
 
 const app = express();
 const PORT = Number(process.env.PORT || 80);
 const UPLOAD_DIR = path.join(__dirname, "uploads");
+const PUBLIC_DIR = path.join(__dirname, "public");
 const sessions = new Map();
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+fs.mkdirSync(PUBLIC_DIR, { recursive: true });
 
 const upload = multer({
   dest: UPLOAD_DIR,
@@ -23,9 +29,73 @@ const upload = multer({
 
 app.use(cors());
 app.use(morgan("dev"));
+
+app.post("/api/payments/wechat/notify", express.raw({ type: "application/json" }), (req, res) => {
+  try {
+    const rawBody = req.body.toString("utf8");
+    if (!payment.verifyNotifySignature(req.headers, rawBody)) {
+      throw new Error("微信支付回调验签失败");
+    }
+    const payload = JSON.parse(rawBody);
+    const transaction = payment.decryptNotifyResource(payload.resource);
+    db.withDb((store) => {
+      const order = store.orders.find((item) => item.id === transaction.out_trade_no);
+      if (order) {
+        order.paymentStatus = "已支付";
+        if (order.status === "待支付") order.status = "待接单";
+        order.transactionId = transaction.transaction_id;
+        order.paidAt = db.localDate();
+        logOperation(store, "system", "payment.notify", order.id, "微信支付回调确认支付成功");
+      }
+    });
+    res.json({ code: "SUCCESS", message: "成功" });
+  } catch (error) {
+    res.status(400).json({ code: "FAIL", message: error.message || "失败" });
+  }
+});
+
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: false }));
 app.use("/uploads", express.static(UPLOAD_DIR));
+app.use("/assets", express.static(PUBLIC_DIR, {
+  maxAge: "7d",
+  etag: true
+}));
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function addHours(hours) {
+  return new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
+}
+
+function logOperation(store, actorId, action, targetId, detail) {
+  store.operationLogs = store.operationLogs || [];
+  store.operationLogs.unshift({
+    id: `L${Date.now()}${Math.floor(Math.random() * 1000)}`,
+    actorId,
+    action,
+    targetId,
+    detail,
+    createdAt: nowIso()
+  });
+}
+
+function autoConfirmExpiredOrders() {
+  const hours = Number(process.env.AUTO_CONFIRM_HOURS || 72);
+  db.withDb((store) => {
+    store.orders.forEach((order) => {
+      if (order.status === "已配送" && order.autoConfirmAt && new Date(order.autoConfirmAt).getTime() <= Date.now()) {
+        order.status = "已完成";
+        order.completedAt = db.localDate();
+        order.settlementStatus = "已结算给店家";
+        order.settlementMode = "自动确认";
+        logOperation(store, "system", "order.auto_complete", order.id, `配送后${hours}小时自动确认收货`);
+      }
+    });
+  });
+}
 
 function getUser(req) {
   const header = req.headers.authorization || "";
@@ -80,19 +150,24 @@ app.post("/api/register", (req, res) => {
     res.status(400).json({ message: "账号至少3位，密码至少6位" });
     return;
   }
-  try {
+  wechat.verifyLoginCode(req.body.wechatCode).then((wechatSession) => {
     const user = db.withDb((store) => {
       if (store.users.some((item) => item.username === username)) {
         throw new Error("账号已存在");
       }
+      if (store.users.some((item) => item.wechatOpenid === wechatSession.openid)) {
+        throw new Error("该微信账号已注册");
+      }
       const nextUser = db.createUser(username, password, "customer", username);
+      nextUser.wechatOpenid = wechatSession.openid;
       store.users.push(nextUser);
+      logOperation(store, nextUser.id, "user.register", nextUser.id, "微信账号校验后注册用户");
       return nextUser;
     });
     res.status(201).json({ user: db.publicUser(user) });
-  } catch (error) {
+  }).catch((error) => {
     res.status(400).json({ message: error.message || "注册失败" });
-  }
+  });
 });
 
 app.post("/api/login", (req, res) => {
@@ -116,6 +191,7 @@ app.get("/api/accounts", requireRole(["admin"]), (req, res) => {
 });
 
 app.get("/api/orders", requireRole(["customer", "merchant", "admin"]), (req, res) => {
+  autoConfirmExpiredOrders();
   const store = db.readDb();
   const orders = req.user.role === "customer"
     ? store.orders.filter((order) => order.customerId === req.user.id)
@@ -129,7 +205,8 @@ app.post("/api/orders", requireRole(["customer"]), (req, res) => {
     const nextOrder = Object.assign({}, req.body, {
       id: `B${Date.now()}`,
       customerId: req.user.id,
-      status: "待接单",
+      status: "待支付",
+      paymentStatus: "待支付",
       createdAt: db.localDate(),
       commission,
       escrowAmount: req.body.totalPrice || 0,
@@ -137,6 +214,7 @@ app.post("/api/orders", requireRole(["customer"]), (req, res) => {
       settlementStatus: "平台托管"
     });
     store.orders.unshift(nextOrder);
+    logOperation(store, req.user.id, "order.create", nextOrder.id, "用户创建订单，资金进入平台托管流程");
     return nextOrder;
   });
   res.status(201).json({ order });
@@ -153,6 +231,11 @@ app.patch("/api/orders/:id/status", requireRole(["merchant", "admin"]), (req, re
       }
       target.status = req.body.status;
       if (!target.settlementStatus) target.settlementStatus = "平台托管";
+      if (req.body.status === "已配送") {
+        target.deliveredAt = nowIso();
+        target.autoConfirmAt = addHours(Number(process.env.AUTO_CONFIRM_HOURS || 72));
+      }
+      logOperation(store, req.user.id, "order.status", target.id, `订单状态更新为${req.body.status}`);
       return target;
     });
     res.json({ order });
@@ -170,6 +253,7 @@ function receiveOrder(req, res) {
       target.status = "已完成";
       target.settlementStatus = "已结算给店家";
       target.completedAt = db.localDate();
+      logOperation(store, req.user.id, "order.receive", target.id, "用户确认收到，释放店家结算金额");
       return target;
     });
     res.json({ order });
@@ -194,25 +278,24 @@ app.get("/api/posts", requireRole(["customer", "admin"]), (req, res) => {
 });
 
 app.post("/api/posts", requireRole(["customer"]), upload.single("image"), (req, res) => {
-  if (!req.file) {
+  if (!req.file && !req.body.fileID) {
     res.status(400).json({ message: "请上传晒图图片" });
     return;
   }
   try {
-    const post = db.withDb((store) => {
+    const saveImage = req.file ? storage.saveUploadedFile(req.file) : storage.saveCloudFileId(req.body.fileID);
+    Promise.resolve(saveImage).then((imageUrl) => {
+      const post = db.withDb((store) => {
       const order = store.orders.find((item) => item.id === req.body.orderId && item.customerId === req.user.id);
       if (!order || order.status !== "已完成") throw new Error("确认收到后才能晒图");
       if (store.posts.some((item) => item.orderId === order.id)) throw new Error("该订单已提交过晒图");
-      const ext = path.extname(req.file.originalname) || ".jpg";
-      const filename = `${req.file.filename}${ext}`;
-      fs.renameSync(req.file.path, path.join(UPLOAD_DIR, filename));
       const nextPost = {
         id: `P${Date.now()}`,
         orderId: order.id,
         customerId: req.user.id,
         title: req.body.title,
         content: req.body.content,
-        imageUrl: `/uploads/${filename}`,
+        imageUrl,
         status: "待审核",
         createdAt: db.localDate(),
         approvedAt: "",
@@ -221,9 +304,14 @@ app.post("/api/posts", requireRole(["customer"]), upload.single("image"), (req, 
         comments: []
       };
       store.posts.unshift(nextPost);
+      logOperation(store, req.user.id, "post.create", nextPost.id, "用户提交社区晒图审核");
       return nextPost;
+      });
+      res.status(201).json({ post: publicPost(post, req.user) });
+    }).catch((error) => {
+      if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+      res.status(400).json({ message: error.message || "上传失败" });
     });
-    res.status(201).json({ post: publicPost(post, req.user) });
   } catch (error) {
     if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
     res.status(400).json({ message: error.message || "上传失败" });
@@ -237,6 +325,7 @@ app.patch("/api/posts/:id/review", requireRole(["admin"]), (req, res) => {
       if (!target) throw new Error("晒图不存在");
       target.status = req.body.status;
       target.approvedAt = req.body.status === "已通过" ? db.localDate() : "";
+      logOperation(store, req.user.id, "post.review", target.id, `晒图审核：${req.body.status}`);
       return target;
     });
     res.json({ post });
@@ -271,12 +360,142 @@ app.post("/api/posts/:id/comments", requireRole(["customer"]), (req, res) => {
       if (!target) throw new Error("晒图不存在");
       target.comments = target.comments || [];
       target.comments.push({ userName: req.user.name, content: req.body.content, createdAt: db.localDate() });
+      logOperation(store, req.user.id, "post.comment", target.id, "用户评论社区晒图");
       return target;
     });
     res.status(201).json({ post: publicPost(post, req.user) });
   } catch (error) {
     res.status(404).json({ message: error.message });
   }
+});
+
+app.post("/api/orders/:id/payments/wechat/prepay", requireRole(["customer"]), async (req, res) => {
+  const store = db.readDb();
+  const order = store.orders.find((item) => item.id === req.params.id && item.customerId === req.user.id);
+  if (!order) {
+    res.status(404).json({ message: "订单不存在" });
+    return;
+  }
+  const user = store.users.find((item) => item.id === req.user.id);
+  try {
+    const result = await payment.createJsapiPayment(order, user && user.wechatOpenid);
+    res.json(result);
+  } catch (error) {
+    res.status(400).json({ message: error.message || "微信支付下单失败" });
+  }
+});
+
+app.post("/api/orders/:id/refund-requests", requireRole(["customer"]), (req, res) => {
+  try {
+    const request = db.withDb((store) => {
+      const order = store.orders.find((item) => item.id === req.params.id && item.customerId === req.user.id);
+      if (!order) throw new Error("订单不存在");
+      if (!refundAndDispute.canRefund(order)) throw new Error("当前订单状态不支持售后退款");
+      order.status = "售后中";
+      order.settlementStatus = "售后冻结";
+      const next = {
+        id: `RF${Date.now()}`,
+        orderId: order.id,
+        customerId: req.user.id,
+        reason: req.body.reason || "用户申请退款",
+        status: "待审核",
+        createdAt: nowIso()
+      };
+      store.refundRequests.unshift(next);
+      logOperation(store, req.user.id, "refund.create", order.id, next.reason);
+      return next;
+    });
+    res.status(201).json({ refundRequest: request });
+  } catch (error) {
+    res.status(400).json({ message: error.message || "申请失败" });
+  }
+});
+
+app.patch("/api/refund-requests/:id/review", requireRole(["admin"]), async (req, res) => {
+  try {
+    const reviewed = db.withDb((store) => {
+      const request = store.refundRequests.find((item) => item.id === req.params.id);
+      if (!request) throw new Error("售后申请不存在");
+      const order = store.orders.find((item) => item.id === request.orderId);
+      request.status = req.body.status;
+      request.reviewedAt = nowIso();
+      request.adminNote = req.body.note || "";
+      if (order && req.body.status === "已通过") {
+        order.status = "已退款";
+        order.settlementStatus = "已退款";
+      }
+      if (order && req.body.status === "已拒绝") {
+        order.status = "已配送";
+        order.settlementStatus = "平台托管";
+      }
+      logOperation(store, req.user.id, "refund.review", request.orderId, `售后审核：${req.body.status}`);
+      return { request, order };
+    });
+    if (req.body.status === "已通过" && reviewed.order) {
+      reviewed.wechatRefund = await payment.requestRefund(reviewed.order, reviewed.request.reason);
+    }
+    res.json(reviewed);
+  } catch (error) {
+    res.status(400).json({ message: error.message || "审核失败" });
+  }
+});
+
+app.post("/api/orders/:id/disputes", requireRole(["customer"]), (req, res) => {
+  try {
+    const dispute = db.withDb((store) => {
+      const order = store.orders.find((item) => item.id === req.params.id && item.customerId === req.user.id);
+      if (!order) throw new Error("订单不存在");
+      if (!refundAndDispute.canDispute(order)) throw new Error("当前订单状态不支持争议");
+      order.status = "争议中";
+      order.settlementStatus = "争议冻结";
+      const next = {
+        id: `D${Date.now()}`,
+        orderId: order.id,
+        customerId: req.user.id,
+        reason: req.body.reason || "用户发起争议",
+        status: "待仲裁",
+        createdAt: nowIso()
+      };
+      store.disputes.unshift(next);
+      logOperation(store, req.user.id, "dispute.create", order.id, next.reason);
+      return next;
+    });
+    res.status(201).json({ dispute });
+  } catch (error) {
+    res.status(400).json({ message: error.message || "发起争议失败" });
+  }
+});
+
+app.patch("/api/disputes/:id/resolve", requireRole(["admin"]), (req, res) => {
+  try {
+    const result = db.withDb((store) => {
+      const dispute = store.disputes.find((item) => item.id === req.params.id);
+      if (!dispute) throw new Error("争议不存在");
+      const order = store.orders.find((item) => item.id === dispute.orderId);
+      dispute.status = "已仲裁";
+      dispute.resolution = req.body.resolution || "平台已处理";
+      dispute.resolvedAt = nowIso();
+      if (order) {
+        if (req.body.result === "refund") {
+          order.status = "已退款";
+          order.settlementStatus = "已退款";
+        } else {
+          order.status = "已完成";
+          order.settlementStatus = "已结算给店家";
+        }
+      }
+      logOperation(store, req.user.id, "dispute.resolve", dispute.orderId, dispute.resolution);
+      return { dispute, order };
+    });
+    res.json(result);
+  } catch (error) {
+    res.status(400).json({ message: error.message || "仲裁失败" });
+  }
+});
+
+app.get("/api/operation-logs", requireRole(["admin"]), (req, res) => {
+  const store = db.readDb();
+  res.json({ logs: store.operationLogs || [] });
 });
 
 app.use((req, res) => {

@@ -32,10 +32,12 @@ apiBaseUrl: "https://express-ydos-264225-8-1438597910.sh.run.tcloudbase.com"
 ## 已实现功能
 
 - 登录页：用户账号注册、账号密码登录，店家和平台从底部入口登录，后端签发 token。
-- 用户端：半定制花束、自动生成默认寄语、填写配送地址、提交订单、确认收货、上传晒图、浏览社区。
+- 用户端：微信账号校验注册、自动填充上次登录账号密码、半定制花束、自动生成默认寄语、填写配送地址、提交订单、确认收货、上传晒图、浏览社区。
 - 店家端：查看订单、预览效果、配送地址、配送时间、寄语和制作要求，按顺序更新订单状态。
 - 平台端：查看全部订单、订单流水、平台抽佣，审核用户上传的社区晒图。
 - 社区：平台审核通过后展示晒图内容，用户可点赞、取消点赞和评论。
+- 交易：预留微信支付 JSAPI 下单、支付回调验签、退款售后、争议仲裁、自动确认收货、商户结算/分账对接点。
+- 素材：已生成全部半定制组合花束图，位于 `server/public/bouquets/`，小程序通过云托管 HTTPS 地址远程加载，避免主包超过 2MB。
 
 ## 后端说明
 
@@ -43,6 +45,7 @@ apiBaseUrl: "https://express-ydos-264225-8-1438597910.sh.run.tcloudbase.com"
 
 - 数据文件：[db.json](</C:/Users/liyiz/Documents/爱的express/server/data/db.json>)
 - 数据库模块：[db.js](</C:/Users/liyiz/Documents/爱的express/server/db.js>)
+- MySQL 初始化脚本：[schema.sql](</C:/Users/liyiz/Documents/爱的express/server/schema.sql>)
 - 上传图片：[uploads](</C:/Users/liyiz/Documents/爱的express/server/uploads>)
 - 云托管地址：`https://express-ydos-264225-8-1438597910.sh.run.tcloudbase.com`
 
@@ -55,6 +58,44 @@ apiBaseUrl: "https://express-ydos-264225-8-1438597910.sh.run.tcloudbase.com"
 ## 云托管上传目录
 
 后端更新时只上传 `server/` 目录内容到云托管或对应 GitHub 仓库。不要上传 `miniprogram/`、`node_modules/`、`.git/`、压缩包等无关文件。
+
+## 后端环境变量
+
+微信账号校验：
+
+```text
+WECHAT_APPID
+WECHAT_SECRET
+```
+
+微信支付：
+
+```text
+WECHAT_PAY_APP_ID
+WECHAT_PAY_MCH_ID
+WECHAT_PAY_SERIAL_NO
+WECHAT_PAY_PRIVATE_KEY
+WECHAT_PAY_API_V3_KEY
+WECHAT_PAY_PLATFORM_PUBLIC_KEY
+WECHAT_PAY_NOTIFY_URL
+WECHAT_REFUND_NOTIFY_URL
+```
+
+订单规则：
+
+```text
+AUTO_CONFIRM_HOURS=72
+```
+
+## 花束图生成
+
+如需重新生成全部组合图：
+
+```bash
+node tools/generate-bouquet-images.js
+```
+
+当前组合数量为：送花场景 4 × 主花 4 × 色系 4 × 版型 3 × 包装 4 = 768 张。
 
 ## 待补充
 
