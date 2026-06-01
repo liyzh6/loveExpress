@@ -22,7 +22,7 @@ Page({
   async loadDashboard() {
     try {
       const orderRes = await api.request({ url: "/api/orders" });
-      const postRes = await api.request({ url: "/api/posts?status=待审核" });
+      const postRes = await api.request({ url: "/api/posts?statusKey=pending" });
       const accountRes = await api.request({ url: "/api/accounts" });
       const orders = orderRes.orders || [];
       const posts = postRes.posts || [];

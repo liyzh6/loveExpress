@@ -1,21 +1,56 @@
 const crypto = require("crypto");
 const https = require("https");
 
+function payAppId() {
+  return process.env.WECHAT_PAY_APP_ID || process.env.WECHAT_APPID || "";
+}
+
+function normalizePem(value) {
+  return String(value || "").replace(/\\n/g, "\n").trim();
+}
+
+function getConfigStatus() {
+  const privateKey = normalizePem(process.env.WECHAT_PAY_PRIVATE_KEY);
+  const platformPublicKey = normalizePem(process.env.WECHAT_PAY_PLATFORM_PUBLIC_KEY);
+  const apiV3Key = String(process.env.WECHAT_PAY_API_V3_KEY || "");
+  const required = {
+    WECHAT_PAY_MCH_ID: process.env.WECHAT_PAY_MCH_ID,
+    WECHAT_PAY_APP_ID: payAppId(),
+    WECHAT_PAY_SERIAL_NO: process.env.WECHAT_PAY_SERIAL_NO,
+    WECHAT_PAY_PRIVATE_KEY: privateKey,
+    WECHAT_PAY_NOTIFY_URL: process.env.WECHAT_PAY_NOTIFY_URL
+  };
+  const missing = Object.keys(required).filter((key) => !required[key]);
+  const warnings = [];
+  if (privateKey && !privateKey.includes("BEGIN PRIVATE KEY")) {
+    warnings.push("WECHAT_PAY_PRIVATE_KEY 看起来不是完整的商户 API 私钥 PEM");
+  }
+  if (process.env.NODE_ENV === "production" && !platformPublicKey.includes("BEGIN PUBLIC KEY")) {
+    warnings.push("生产环境建议配置完整的 WECHAT_PAY_PLATFORM_PUBLIC_KEY 用于回调验签");
+  }
+  if (apiV3Key && Buffer.byteLength(apiV3Key) !== 32) {
+    warnings.push("WECHAT_PAY_API_V3_KEY 应为 32 字节，当前长度不符合微信支付回调解密要求");
+  }
+  if (process.env.WECHAT_PAY_NOTIFY_URL && !/^https:\/\//.test(process.env.WECHAT_PAY_NOTIFY_URL)) {
+    warnings.push("WECHAT_PAY_NOTIFY_URL 必须是 HTTPS 地址");
+  }
+  return {
+    configured: missing.length === 0 && privateKey.includes("BEGIN PRIVATE KEY"),
+    missing,
+    warnings,
+    appIdSource: process.env.WECHAT_PAY_APP_ID ? "WECHAT_PAY_APP_ID" : (process.env.WECHAT_APPID ? "WECHAT_APPID" : "")
+  };
+}
+
 function configured() {
-  return Boolean(
-    process.env.WECHAT_PAY_MCH_ID &&
-    process.env.WECHAT_PAY_APP_ID &&
-    process.env.WECHAT_PAY_SERIAL_NO &&
-    process.env.WECHAT_PAY_PRIVATE_KEY &&
-    process.env.WECHAT_PAY_NOTIFY_URL
-  );
+  return getConfigStatus().configured;
 }
 
 function verifyNotifySignature(headers, rawBody) {
-  const publicKey = process.env.WECHAT_PAY_PLATFORM_PUBLIC_KEY;
-  if (!publicKey) {
+  const publicKey = normalizePem(process.env.WECHAT_PAY_PLATFORM_PUBLIC_KEY);
+  if (!publicKey.includes("BEGIN PUBLIC KEY")) {
     if (process.env.NODE_ENV === "production") {
-      throw new Error("未配置微信支付平台公钥，无法验签");
+      throw new Error("未配置完整的微信支付平台公钥，无法验签");
     }
     return true;
   }
@@ -25,7 +60,7 @@ function verifyNotifySignature(headers, rawBody) {
   const message = `${timestamp}\n${nonce}\n${rawBody}\n`;
   return crypto.createVerify("RSA-SHA256")
     .update(message)
-    .verify(publicKey.replace(/\\n/g, "\n"), signature, "base64");
+    .verify(publicKey, signature, "base64");
 }
 
 function randomString(size = 32) {
@@ -33,26 +68,26 @@ function randomString(size = 32) {
 }
 
 function getPrivateKey() {
-  return String(process.env.WECHAT_PAY_PRIVATE_KEY || "").replace(/\\n/g, "\n");
+  return normalizePem(process.env.WECHAT_PAY_PRIVATE_KEY);
 }
 
 function sign(message) {
   return crypto.createSign("RSA-SHA256").update(message).sign(getPrivateKey(), "base64");
 }
 
-function requestWechatPay(method, path, body) {
+function requestWechatPay(method, apiPath, body) {
   const mchid = process.env.WECHAT_PAY_MCH_ID;
   const serialNo = process.env.WECHAT_PAY_SERIAL_NO;
   const timestamp = Math.floor(Date.now() / 1000);
   const nonce = randomString();
   const rawBody = body ? JSON.stringify(body) : "";
-  const message = `${method}\n${path}\n${timestamp}\n${nonce}\n${rawBody}\n`;
+  const message = `${method}\n${apiPath}\n${timestamp}\n${nonce}\n${rawBody}\n`;
   const signature = sign(message);
 
   return new Promise((resolve, reject) => {
     const req = https.request({
       hostname: "api.mch.weixin.qq.com",
-      path,
+      path: apiPath,
       method,
       headers: {
         "content-type": "application/json",
@@ -79,18 +114,21 @@ function requestWechatPay(method, path, body) {
 }
 
 async function createJsapiPayment(order, openid) {
-  if (!configured()) {
+  const status = getConfigStatus();
+  if (!status.configured) {
     return {
       configured: false,
-      message: "微信支付未配置，需设置商户号、AppID、证书序列号和私钥"
+      message: "微信支付未完成配置",
+      missing: status.missing,
+      warnings: status.warnings
     };
   }
-  const appid = process.env.WECHAT_PAY_APP_ID;
+  const appid = payAppId();
   if (!openid) throw new Error("用户未绑定微信 openid，无法发起 JSAPI 支付");
   const body = {
     appid,
     mchid: process.env.WECHAT_PAY_MCH_ID,
-    description: `爱的Express-${order.id}`,
+    description: `予花知爱-${order.id}`,
     out_trade_no: order.id,
     notify_url: process.env.WECHAT_PAY_NOTIFY_URL,
     amount: {
@@ -117,10 +155,13 @@ async function createJsapiPayment(order, openid) {
 }
 
 async function requestRefund(order, reason) {
-  if (!configured()) {
+  const status = getConfigStatus();
+  if (!status.configured) {
     return {
       configured: false,
-      message: "微信退款未配置"
+      message: "微信退款未配置",
+      missing: status.missing,
+      warnings: status.warnings
     };
   }
   const body = {
@@ -151,10 +192,10 @@ function decryptNotifyResource(resource) {
   return JSON.parse(decoded.toString("utf8"));
 }
 
-async function createProfitSharing(order) {
+async function createProfitSharing() {
   return {
     configured: false,
-    message: "分账需要先完成服务商/商户分账开通和接收方绑定，本接口已预留结算状态"
+    message: "分账暂未实现，当前资金保持平台托管"
   };
 }
 
@@ -162,6 +203,7 @@ module.exports = {
   createJsapiPayment,
   createProfitSharing,
   decryptNotifyResource,
+  getConfigStatus,
   requestRefund,
   verifyNotifySignature
 };

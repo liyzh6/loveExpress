@@ -216,6 +216,10 @@ app.get("/api/deploy-info", (req, res) => {
   });
 });
 
+app.get("/api/payments/wechat/config", requireRole(["admin"]), (req, res) => {
+  res.json(payment.getConfigStatus());
+});
+
 app.get("/api/count", (req, res) => {
   res.json({ code: 0, data: 1 });
 });
@@ -377,9 +381,15 @@ app.post("/api/orders/:id/receive", requireRole(["customer"]), receiveOrder);
 
 app.get("/api/posts", requireRole(["customer", "admin"]), (req, res) => {
   const store = db.readDb();
+  const statusMap = {
+    pending: "待审核",
+    approved: "已通过",
+    rejected: "已拒绝"
+  };
+  const requestedStatus = statusMap[req.query.statusKey] || req.query.status;
   const posts = store.posts
     .filter((post) => {
-      if (req.query.status && post.status !== req.query.status) return false;
+      if (requestedStatus && post.status !== requestedStatus) return false;
       if (req.user.role === "admin") return true;
       return post.status === "已通过" || post.customerId === req.user.id;
     })

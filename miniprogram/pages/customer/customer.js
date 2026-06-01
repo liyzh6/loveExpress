@@ -291,7 +291,8 @@ Page({
         await this.requestPayment(payRes.payment);
         await api.request({ url: `/api/orders/${created.order.id}/payments/wechat/success`, method: "POST" });
       } else {
-        wx.showToast({ title: "订单已创建，微信支付待配置", icon: "none" });
+        const missing = payRes.missing && payRes.missing.length ? `：${payRes.missing.join(",")}` : "";
+        wx.showToast({ title: `微信支付待配置${missing}`, icon: "none" });
       }
       this.setData({ activePanel: "orders", receiver: "", phone: "", address: "", addressName: "", latitude: null, longitude: null });
       this.loadOrders();
@@ -334,7 +335,7 @@ Page({
 
   async loadPosts() {
     try {
-      const res = await api.request({ url: "/api/posts?status=已通过" });
+      const res = await api.request({ url: "/api/posts?statusKey=approved" });
       const approvedPosts = (res.posts || []).map((post) => Object.assign({}, post, {
         fullImageUrl: post.imageUrl && post.imageUrl.indexOf("cloud://") === 0 ? post.imageUrl : `${app.globalData.apiBaseUrl}${post.imageUrl}`
       }));
