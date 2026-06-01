@@ -18,13 +18,22 @@ function normalizePem(value, type) {
   const begin = `-----BEGIN ${type}-----`;
   const end = `-----END ${type}-----`;
   if (pem.includes(begin) && pem.includes(end)) {
-    const body = pem
+    let body = pem
       .replace(begin, "")
       .replace(end, "")
       .replace(/\s+/g, "");
+    body = body.replace(/[^A-Za-z0-9+/=]/g, "");
     pem = `${begin}\n${body.match(/.{1,64}/g).join("\n")}\n${end}`;
   }
   return pem;
+}
+
+function pemBody(value, type) {
+  const pem = normalizePem(value, type);
+  return pem
+    .replace(`-----BEGIN ${type}-----`, "")
+    .replace(`-----END ${type}-----`, "")
+    .replace(/\s+/g, "");
 }
 
 function privateKey() {
@@ -50,8 +59,10 @@ function getConfigStatus() {
   const warnings = [];
   const privateKeyLooksPem = key.startsWith("-----BEGIN PRIVATE KEY-----") && key.endsWith("-----END PRIVATE KEY-----");
   const platformPublicKeyLooksPem = publicKey.startsWith("-----BEGIN PUBLIC KEY-----") && publicKey.endsWith("-----END PUBLIC KEY-----");
+  const privateKeyBody = pemBody(process.env.WECHAT_PAY_PRIVATE_KEY, "PRIVATE KEY");
 
   if (key && !privateKeyLooksPem) warnings.push("WECHAT_PAY_PRIVATE_KEY 不是完整的商户 API 私钥 PEM");
+  if (privateKeyBody && !/^[A-Za-z0-9+/=]+$/.test(privateKeyBody)) warnings.push("WECHAT_PAY_PRIVATE_KEY 正文包含非 base64 字符，请重新复制 apiclient_key.pem");
   if (process.env.NODE_ENV === "production" && !platformPublicKeyLooksPem) {
     warnings.push("生产环境建议配置完整的 WECHAT_PAY_PLATFORM_PUBLIC_KEY 用于回调验签");
   }
@@ -70,6 +81,8 @@ function getConfigStatus() {
     checks: {
       privateKeyLooksPem,
       privateKeyLength: key.length,
+      privateKeyBodyLength: privateKeyBody.length,
+      privateKeyBodyBase64: !privateKeyBody || /^[A-Za-z0-9+/=]+$/.test(privateKeyBody),
       platformPublicKeyLooksPem,
       apiV3KeyByteLength: Buffer.byteLength(apiV3Key)
     }
