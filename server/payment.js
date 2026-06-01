@@ -5,49 +5,79 @@ function payAppId() {
   return process.env.WECHAT_PAY_APP_ID || process.env.WECHAT_APPID || "";
 }
 
-function normalizePem(value) {
-  return String(value || "").replace(/\\n/g, "\n").trim();
+function normalizePem(value, type) {
+  let pem = String(value || "")
+    .replace(/^\uFEFF/, "")
+    .replace(/^["']|["']$/g, "")
+    .replace(/\\r\\n/g, "\n")
+    .replace(/\\n/g, "\n")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .trim();
+
+  const begin = `-----BEGIN ${type}-----`;
+  const end = `-----END ${type}-----`;
+  if (pem.includes(begin) && pem.includes(end)) {
+    const body = pem
+      .replace(begin, "")
+      .replace(end, "")
+      .replace(/\s+/g, "");
+    pem = `${begin}\n${body.match(/.{1,64}/g).join("\n")}\n${end}`;
+  }
+  return pem;
+}
+
+function privateKey() {
+  return normalizePem(process.env.WECHAT_PAY_PRIVATE_KEY, "PRIVATE KEY");
+}
+
+function platformPublicKey() {
+  return normalizePem(process.env.WECHAT_PAY_PLATFORM_PUBLIC_KEY, "PUBLIC KEY");
 }
 
 function getConfigStatus() {
-  const privateKey = normalizePem(process.env.WECHAT_PAY_PRIVATE_KEY);
-  const platformPublicKey = normalizePem(process.env.WECHAT_PAY_PLATFORM_PUBLIC_KEY);
+  const key = privateKey();
+  const publicKey = platformPublicKey();
   const apiV3Key = String(process.env.WECHAT_PAY_API_V3_KEY || "");
   const required = {
     WECHAT_PAY_MCH_ID: process.env.WECHAT_PAY_MCH_ID,
     WECHAT_PAY_APP_ID: payAppId(),
     WECHAT_PAY_SERIAL_NO: process.env.WECHAT_PAY_SERIAL_NO,
-    WECHAT_PAY_PRIVATE_KEY: privateKey,
+    WECHAT_PAY_PRIVATE_KEY: key,
     WECHAT_PAY_NOTIFY_URL: process.env.WECHAT_PAY_NOTIFY_URL
   };
-  const missing = Object.keys(required).filter((key) => !required[key]);
+  const missing = Object.keys(required).filter((name) => !required[name]);
   const warnings = [];
-  if (privateKey && !privateKey.includes("BEGIN PRIVATE KEY")) {
-    warnings.push("WECHAT_PAY_PRIVATE_KEY 看起来不是完整的商户 API 私钥 PEM");
-  }
-  if (process.env.NODE_ENV === "production" && !platformPublicKey.includes("BEGIN PUBLIC KEY")) {
+  const privateKeyLooksPem = key.startsWith("-----BEGIN PRIVATE KEY-----") && key.endsWith("-----END PRIVATE KEY-----");
+  const platformPublicKeyLooksPem = publicKey.startsWith("-----BEGIN PUBLIC KEY-----") && publicKey.endsWith("-----END PUBLIC KEY-----");
+
+  if (key && !privateKeyLooksPem) warnings.push("WECHAT_PAY_PRIVATE_KEY 不是完整的商户 API 私钥 PEM");
+  if (process.env.NODE_ENV === "production" && !platformPublicKeyLooksPem) {
     warnings.push("生产环境建议配置完整的 WECHAT_PAY_PLATFORM_PUBLIC_KEY 用于回调验签");
   }
   if (apiV3Key && Buffer.byteLength(apiV3Key) !== 32) {
-    warnings.push("WECHAT_PAY_API_V3_KEY 应为 32 字节，当前长度不符合微信支付回调解密要求");
+    warnings.push("WECHAT_PAY_API_V3_KEY 应为 32 字节");
   }
   if (process.env.WECHAT_PAY_NOTIFY_URL && !/^https:\/\//.test(process.env.WECHAT_PAY_NOTIFY_URL)) {
     warnings.push("WECHAT_PAY_NOTIFY_URL 必须是 HTTPS 地址");
   }
+
   return {
-    configured: missing.length === 0 && privateKey.includes("BEGIN PRIVATE KEY"),
+    configured: missing.length === 0 && privateKeyLooksPem,
     missing,
     warnings,
-    appIdSource: process.env.WECHAT_PAY_APP_ID ? "WECHAT_PAY_APP_ID" : (process.env.WECHAT_APPID ? "WECHAT_APPID" : "")
+    appIdSource: process.env.WECHAT_PAY_APP_ID ? "WECHAT_PAY_APP_ID" : (process.env.WECHAT_APPID ? "WECHAT_APPID" : ""),
+    checks: {
+      privateKeyLooksPem,
+      privateKeyLength: key.length,
+      platformPublicKeyLooksPem,
+      apiV3KeyByteLength: Buffer.byteLength(apiV3Key)
+    }
   };
 }
 
-function configured() {
-  return getConfigStatus().configured;
-}
-
 function verifyNotifySignature(headers, rawBody) {
-  const publicKey = normalizePem(process.env.WECHAT_PAY_PLATFORM_PUBLIC_KEY);
+  const publicKey = platformPublicKey();
   if (!publicKey.includes("BEGIN PUBLIC KEY")) {
     if (process.env.NODE_ENV === "production") {
       throw new Error("未配置完整的微信支付平台公钥，无法验签");
@@ -58,21 +88,19 @@ function verifyNotifySignature(headers, rawBody) {
   const nonce = headers["wechatpay-nonce"];
   const signature = headers["wechatpay-signature"];
   const message = `${timestamp}\n${nonce}\n${rawBody}\n`;
-  return crypto.createVerify("RSA-SHA256")
-    .update(message)
-    .verify(publicKey, signature, "base64");
+  return crypto.createVerify("RSA-SHA256").update(message).verify(publicKey, signature, "base64");
 }
 
 function randomString(size = 32) {
   return crypto.randomBytes(size).toString("hex").slice(0, size);
 }
 
-function getPrivateKey() {
-  return normalizePem(process.env.WECHAT_PAY_PRIVATE_KEY);
-}
-
 function sign(message) {
-  return crypto.createSign("RSA-SHA256").update(message).sign(getPrivateKey(), "base64");
+  try {
+    return crypto.createSign("RSA-SHA256").update(message).sign(privateKey(), "base64");
+  } catch (error) {
+    throw new Error(`商户 API 私钥格式错误：${error.message}`);
+  }
 }
 
 function requestWechatPay(method, apiPath, body) {
@@ -120,7 +148,8 @@ async function createJsapiPayment(order, openid) {
       configured: false,
       message: "微信支付未完成配置",
       missing: status.missing,
-      warnings: status.warnings
+      warnings: status.warnings,
+      checks: status.checks
     };
   }
   const appid = payAppId();
