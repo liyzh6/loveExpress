@@ -59,35 +59,6 @@
   font-weight: 700;
 }
 
-.summary-row {
-  display: grid;
-  grid-template-columns: 220rpx 1fr;
-  gap: 16rpx;
-  margin-bottom: 24rpx;
-}
-
-.stat {
-  min-height: 110rpx;
-}
-
-.stat-label {
-  display: block;
-  color: #807970;
-  font-size: 23rpx;
-}
-
-.stat-value {
-  display: block;
-  margin-top: 8rpx;
-  color: #2f5d50;
-  font-size: 36rpx;
-  font-weight: 800;
-}
-
-.stat-value.small {
-  font-size: 28rpx;
-}
-
 .preview-panel,
 .post-preview {
   display: flex;
@@ -213,6 +184,14 @@
   font-weight: 800;
 }
 
+.preview-price {
+  display: block;
+  margin-bottom: 8rpx;
+  color: #2f5d50;
+  font-size: 42rpx;
+  font-weight: 800;
+}
+
 .preview-desc,
 .post-desc {
   display: block;
@@ -256,6 +235,59 @@
   border-radius: 999rpx;
 }
 
+.choice-panel {
+  display: grid;
+  gap: 12rpx;
+}
+
+.choice-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12rpx;
+}
+
+.cycle-button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  width: 100%;
+  min-width: 0;
+  height: 320rpx;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 22rpx;
+  border: 1rpx solid #e7dfd5;
+  border-radius: 22rpx;
+  background: #fffefa;
+  color: #2b2b2b;
+  line-height: normal;
+  text-align: left;
+  box-shadow: 0 10rpx 24rpx rgba(47, 93, 80, 0.06);
+}
+
+.cycle-button::after {
+  border: 0;
+}
+
+.cycle-label {
+  display: block;
+  color: #807970;
+  font-size: 22rpx;
+  font-weight: 700;
+}
+
+.cycle-value {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  color: #2f5d50;
+  font-size: 34rpx;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .field {
   margin-bottom: 22rpx;
 }
@@ -288,24 +320,35 @@
 
 .address-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 160rpx;
+  width: 100%;
+  box-sizing: border-box;
+  grid-template-columns: minmax(0, 1fr) 150rpx;
   gap: 12rpx;
   align-items: center;
 }
 
 .address-input {
+  width: 100%;
   min-width: 0;
 }
 
 .map-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-width: 0;
+  max-width: 150rpx;
+  box-sizing: border-box;
   height: 82rpx;
-  line-height: 82rpx;
+  line-height: normal;
   margin: 0;
   padding: 0;
   border-radius: 8rpx;
   background: #2f5d50;
   color: #ffffff;
-  font-size: 24rpx;
+  font-size: 22rpx;
+  white-space: nowrap;
 }
 
 .field-error {

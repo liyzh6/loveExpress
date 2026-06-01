@@ -19,6 +19,33 @@ const UPLOAD_DIR = path.join(__dirname, "uploads");
 const PUBLIC_DIR = path.join(__dirname, "public");
 const sessions = new Map();
 
+const ORDER_STATUS = {
+  pendingPay: "待支付",
+  pendingAccept: "待接单",
+  accepted: "已接单",
+  making: "制作中",
+  delivered: "已配送",
+  completed: "已完成"
+};
+
+const PAYMENT_STATUS = {
+  pending: "待支付",
+  paid: "已支付",
+  refunded: "已退款"
+};
+
+function markOrderPaid(store, order, detail) {
+  order.paymentStatus = PAYMENT_STATUS.paid;
+  if (order.status === ORDER_STATUS.pendingPay || !order.status) {
+    order.status = ORDER_STATUS.pendingAccept;
+  }
+  order.paidAt = order.paidAt || db.localDate();
+  order.escrowStatus = "平台账户已收款";
+  order.settlementStatus = "平台托管";
+  logOperation(store, "system", "payment.paid", order.id, detail || "支付成功，资金进入平台托管");
+  return order;
+}
+
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 fs.mkdirSync(PUBLIC_DIR, { recursive: true });
 
@@ -41,11 +68,8 @@ app.post("/api/payments/wechat/notify", express.raw({ type: "application/json" }
     db.withDb((store) => {
       const order = store.orders.find((item) => item.id === transaction.out_trade_no);
       if (order) {
-        order.paymentStatus = "已支付";
-        if (order.status === "待支付") order.status = "待接单";
         order.transactionId = transaction.transaction_id;
-        order.paidAt = db.localDate();
-        logOperation(store, "system", "payment.notify", order.id, "微信支付回调确认支付成功");
+        markOrderPaid(store, order, "微信支付回调确认支付成功");
       }
     });
     res.json({ code: "SUCCESS", message: "成功" });
@@ -112,7 +136,7 @@ function autoConfirmExpiredOrders() {
       if (order.status === "已配送" && order.autoConfirmAt && new Date(order.autoConfirmAt).getTime() <= Date.now()) {
         order.status = "已完成";
         order.completedAt = db.localDate();
-        order.settlementStatus = "已结算给店家";
+        order.settlementStatus = "平台托管，待人工结算";
         order.settlementMode = "自动确认";
         logOperation(store, "system", "order.auto_complete", order.id, `配送后${hours}小时自动确认收货`);
       }
@@ -270,7 +294,7 @@ app.get("/api/orders", requireRole(["customer", "merchant", "admin"]), (req, res
   const store = db.readDb();
   const orders = req.user.role === "customer"
     ? store.orders.filter((order) => order.customerId === req.user.id)
-    : store.orders;
+    : store.orders.filter((order) => req.user.role === "admin" || order.paymentStatus === PAYMENT_STATUS.paid || order.status !== ORDER_STATUS.pendingPay);
   res.json({ orders });
 });
 
@@ -291,6 +315,9 @@ app.post("/api/orders", requireRole(["customer"]), (req, res) => {
         commission,
         escrowAmount: req.body.totalPrice || 0,
         merchantReceivable: (req.body.totalPrice || 0) - commission,
+        status: ORDER_STATUS.pendingPay,
+        paymentStatus: PAYMENT_STATUS.pending,
+        escrowStatus: "等待支付",
         settlementStatus: "平台托管"
       });
       store.orders.unshift(nextOrder);
@@ -308,7 +335,7 @@ app.patch("/api/orders/:id/status", requireRole(["merchant", "admin"]), (req, re
     const order = db.withDb((store) => {
       const target = store.orders.find((item) => item.id === req.params.id);
       if (!target) throw new Error("订单不存在");
-      const flow = ["待接单", "已接单", "制作中", "已配送"];
+      const flow = [ORDER_STATUS.pendingAccept, ORDER_STATUS.accepted, ORDER_STATUS.making, ORDER_STATUS.delivered];
       if (flow.indexOf(req.body.status) !== flow.indexOf(target.status) + 1 && req.body.status !== target.status) {
         throw new Error("订单状态需要按顺序流转");
       }
@@ -334,9 +361,9 @@ function receiveOrder(req, res) {
       if (!target) throw new Error("订单不存在");
       if (target.status !== "已配送") throw new Error("店家配送后才能确认收到");
       target.status = "已完成";
-      target.settlementStatus = "已结算给店家";
+      target.settlementStatus = "平台托管，待人工结算";
       target.completedAt = db.localDate();
-      logOperation(store, req.user.id, "order.receive", target.id, "用户确认收到，释放店家结算金额");
+      logOperation(store, req.user.id, "order.receive", target.id, "用户确认收到，订单完成，资金仍在平台托管");
       return target;
     });
     res.json({ order });
@@ -468,6 +495,22 @@ app.post("/api/orders/:id/payments/wechat/prepay", requireRole(["customer"]), as
   }
 });
 
+app.post("/api/orders/:id/payments/wechat/success", requireRole(["customer"]), (req, res) => {
+  try {
+    const order = db.withDb((store) => {
+      const target = store.orders.find((item) => item.id === req.params.id && item.customerId === req.user.id);
+      if (!target) throw new Error("订单不存在");
+      if (target.paymentStatus === PAYMENT_STATUS.paid) return target;
+      target.clientPayConfirmedAt = nowIso();
+      markOrderPaid(store, target, "用户端支付完成，订单进入店家接单流程");
+      return target;
+    });
+    res.json({ order });
+  } catch (error) {
+    res.status(error.message === "订单不存在" ? 404 : 400).json({ message: error.message || "确认支付失败" });
+  }
+});
+
 app.post("/api/orders/:id/refund-requests", requireRole(["customer"]), (req, res) => {
   try {
     const request = db.withDb((store) => {
@@ -564,7 +607,7 @@ app.patch("/api/disputes/:id/resolve", requireRole(["admin"]), (req, res) => {
           order.settlementStatus = "已退款";
         } else {
           order.status = "已完成";
-          order.settlementStatus = "已结算给店家";
+          order.settlementStatus = "平台托管，待人工结算";
         }
       }
       logOperation(store, req.user.id, "dispute.resolve", dispute.orderId, dispute.resolution);

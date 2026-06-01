@@ -20,8 +20,9 @@ Page({
   data: {
     activePanel: "customize",
     scenarioIndex: 0,
-    flowerIndex: 0,
     paletteIndex: 0,
+    flowerIndex: 0,
+    fillerIndex: 0,
     layoutIndex: 0,
     wrapperIndex: 0,
     timeSlotIndex: 1,
@@ -46,10 +47,16 @@ Page({
       { id: "visit", name: "探望", tone: "清新、安慰、不过分浓烈" }
     ],
     flowers: [
-      { id: "rose", name: "玫瑰", price: 99, meaning: "爱与珍惜" },
-      { id: "tulip", name: "郁金香", price: 129, meaning: "优雅告白" },
-      { id: "lisianthus", name: "洋桔梗", price: 89, meaning: "真诚不变" },
-      { id: "sunflower", name: "向日葵", price: 79, meaning: "明朗陪伴" }
+      { id: "rose", name: "玫瑰", price: 18, meaning: "爱与珍惜" },
+      { id: "tulip", name: "郁金香", price: 16, meaning: "优雅告白" },
+      { id: "lisianthus", name: "洋桔梗", price: 14, meaning: "真诚不变" },
+      { id: "sunflower", name: "向日葵", price: 12, meaning: "明朗陪伴" }
+    ],
+    fillers: [
+      { id: "babybreath", name: "满天星", price: 6, meaning: "轻柔陪衬" },
+      { id: "eucalyptus", name: "尤加利", price: 5, meaning: "清新层次" },
+      { id: "forgetmenot", name: "勿忘我", price: 7, meaning: "细腻心意" },
+      { id: "none", name: "不加副花", price: 0, meaning: "简约主花" }
     ],
     palettes: [
       { id: "pink", name: "粉白", colors: ["#f5a7b8", "#fff4f6", "#d9b6ff"], wrapColor: "#f8e7ea", ribbonColor: "#ce6d86" },
@@ -63,14 +70,15 @@ Page({
       { id: "side", name: "单侧瀑布", desc: "视觉有方向感，适合纪念日" }
     ],
     wrappers: [
-      { id: "korean", key: "korean", name: "韩素纸", price: 29, desc: "柔和哑光" },
-      { id: "kraft", key: "kraft", name: "牛皮纸", price: 19, desc: "自然复古" },
-      { id: "mesh", key: "mesh", name: "纱网", price: 39, desc: "轻盈通透" },
-      { id: "premium", key: "premium", name: "欧雅纸", price: 49, desc: "挺括高级" }
+      { id: "korean", key: "korean", name: "韩素纸", price: 8, desc: "柔和哑光" },
+      { id: "kraft", key: "kraft", name: "牛皮纸", price: 5, desc: "自然复古" },
+      { id: "mesh", key: "mesh", name: "纱网", price: 9, desc: "轻盈通透" },
+      { id: "premium", key: "premium", name: "欧雅纸", price: 10, desc: "挺括高级" }
     ],
     selectedScenario: {},
-    selectedFlower: {},
     selectedPalette: {},
+    selectedFlower: {},
+    selectedFiller: {},
     selectedLayout: {},
     selectedWrapper: {},
     previewFlowers: [],
@@ -99,24 +107,28 @@ Page({
     app.logout();
   },
 
-  selectScenario(event) {
-    this.setData({ scenarioIndex: Number(event.currentTarget.dataset.index) }, () => this.refreshSelection());
+  cycleScenario() {
+    this.setData({ scenarioIndex: (this.data.scenarioIndex + 1) % this.data.scenarios.length }, () => this.refreshSelection());
   },
 
-  selectFlower(event) {
-    this.setData({ flowerIndex: Number(event.currentTarget.dataset.index) }, () => this.refreshSelection());
+  cyclePalette() {
+    this.setData({ paletteIndex: (this.data.paletteIndex + 1) % this.data.palettes.length }, () => this.refreshSelection());
   },
 
-  selectPalette(event) {
-    this.setData({ paletteIndex: Number(event.currentTarget.dataset.index) }, () => this.refreshSelection());
+  cycleFlower() {
+    this.setData({ flowerIndex: (this.data.flowerIndex + 1) % this.data.flowers.length }, () => this.refreshSelection());
   },
 
-  selectLayout(event) {
-    this.setData({ layoutIndex: Number(event.currentTarget.dataset.index) }, () => this.refreshSelection());
+  cycleFiller() {
+    this.setData({ fillerIndex: (this.data.fillerIndex + 1) % this.data.fillers.length }, () => this.refreshSelection());
   },
 
-  selectWrapper(event) {
-    this.setData({ wrapperIndex: Number(event.currentTarget.dataset.index) }, () => this.refreshSelection());
+  cycleLayout() {
+    this.setData({ layoutIndex: (this.data.layoutIndex + 1) % this.data.layouts.length }, () => this.refreshSelection());
+  },
+
+  cycleWrapper() {
+    this.setData({ wrapperIndex: (this.data.wrapperIndex + 1) % this.data.wrappers.length }, () => this.refreshSelection());
   },
 
   onDateChange(event) {
@@ -175,14 +187,25 @@ Page({
 
   refreshSelection() {
     const selectedScenario = this.data.scenarios[this.data.scenarioIndex];
-    const selectedFlower = this.data.flowers[this.data.flowerIndex];
     const selectedPalette = this.data.palettes[this.data.paletteIndex];
+    const selectedFlower = this.data.flowers[this.data.flowerIndex];
+    const selectedFiller = this.data.fillers[this.data.fillerIndex];
     const selectedLayout = this.data.layouts[this.data.layoutIndex];
     const selectedWrapper = this.data.wrappers[this.data.wrapperIndex];
-    const previewFlowers = this.buildPreview(selectedPalette, selectedLayout);
+    const previewFlowers = this.buildPreview(selectedPalette, selectedLayout, selectedFiller);
     const previewImage = `${app.globalData.apiBaseUrl}/assets/bouquets/${selectedScenario.id}_${selectedFlower.id}_${selectedPalette.id}_${selectedLayout.id}_${selectedWrapper.id}.png`;
-    const totalPrice = 99 + selectedFlower.price + selectedWrapper.price;
-    const nextData = { selectedScenario, selectedFlower, selectedPalette, selectedLayout, selectedWrapper, previewFlowers, previewImage, totalPrice };
+    const totalPrice = 58 + selectedFlower.price + selectedFiller.price + selectedWrapper.price;
+    const nextData = {
+      selectedScenario,
+      selectedPalette,
+      selectedFlower,
+      selectedFiller,
+      selectedLayout,
+      selectedWrapper,
+      previewFlowers,
+      previewImage,
+      totalPrice
+    };
     if (!this.data.messageTouched) {
       nextData.message = this.buildMessage(selectedScenario, selectedFlower);
     }
@@ -199,17 +222,18 @@ Page({
     return templates[scenario.id] || `愿这束${flower.name}替我把心意送到你身边。`;
   },
 
-  buildPreview(palette, layout) {
+  buildPreview(palette, layout, filler) {
     const layoutMap = {
       round: [[48, 20, "large"], [34, 28, "medium"], [62, 30, "medium"], [42, 40, "medium"], [56, 42, "medium"], [48, 52, "large"], [30, 48, "small"], [68, 50, "small"], [38, 60, "small"], [58, 62, "small"]],
       natural: [[50, 14, "medium"], [35, 24, "large"], [63, 28, "small"], [44, 38, "medium"], [58, 44, "large"], [29, 48, "small"], [48, 56, "medium"], [68, 58, "small"], [38, 66, "small"]],
       side: [[38, 18, "large"], [50, 25, "medium"], [62, 35, "medium"], [44, 42, "medium"], [56, 52, "large"], [66, 62, "small"], [48, 67, "small"], [36, 57, "small"]]
     };
+    const fillerColor = filler.id === "none" ? palette.colors[2] : "#f7f1df";
     const positions = layoutMap[layout.id] || layoutMap.round;
     return positions.map((position, index) => ({
       id: `${layout.id}-${index}`,
       size: position[2],
-      style: `left:${position[0]}%;top:${position[1]}%;background:${palette.colors[index % palette.colors.length]};`
+      style: `left:${position[0]}%;top:${position[1]}%;background:${index > 5 ? fillerColor : palette.colors[index % palette.colors.length]};`
     }));
   },
 
@@ -252,8 +276,9 @@ Page({
       previewImage: this.data.previewImage,
       specs: {
         scenario: this.data.selectedScenario,
-        flower: this.data.selectedFlower,
         palette: this.data.selectedPalette,
+        flower: this.data.selectedFlower,
+        filler: this.data.selectedFiller,
         layout: this.data.selectedLayout,
         wrapper: this.data.selectedWrapper
       },
@@ -264,6 +289,7 @@ Page({
       const payRes = await api.request({ url: `/api/orders/${created.order.id}/payments/wechat/prepay`, method: "POST" });
       if (payRes.configured && payRes.payment) {
         await this.requestPayment(payRes.payment);
+        await api.request({ url: `/api/orders/${created.order.id}/payments/wechat/success`, method: "POST" });
       } else {
         wx.showToast({ title: "订单已创建，微信支付待配置", icon: "none" });
       }

@@ -19,10 +19,13 @@ Page({
   async loadOrders() {
     try {
       const res = await api.request({ url: "/api/orders" });
-      const orders = (res.orders || []).map((order) => Object.assign({}, order, {
+      const paidOrders = (res.orders || []).filter((order) => order.paymentStatus === "已支付" || order.status !== "待支付");
+      const orders = paidOrders.map((order) => Object.assign({}, order, {
         showAccept: order.status === "待接单",
         showMaking: order.status === "已接单",
-        showDeliver: order.status === "制作中"
+        showDeliver: order.status === "制作中",
+        showWaitingConfirm: order.status === "已配送",
+        showDone: order.status === "已完成"
       }));
       const pendingCount = orders.filter((order) => order.status !== "已完成").length;
       this.setData({ orders, pendingCount });

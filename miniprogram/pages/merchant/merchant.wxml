@@ -3,14 +3,14 @@
     <view>
       <text class="eyebrow">店家端</text>
       <text class="title">今日制作单</text>
-      <text class="subtitle">接单、制作、配送完成后，用户端才能申请晒图。</text>
+      <text class="subtitle">用户完成支付后，订单会进入接单、制作、配送流程。</text>
     </view>
     <button class="logout-button" bindtap="logout">退出</button>
   </view>
 
   <view class="metrics">
     <view class="panel metric">
-      <text class="metric-label">订单数</text>
+      <text class="metric-label">已支付订单</text>
       <text class="metric-value">{{orders.length}}</text>
     </view>
     <view class="panel metric">
@@ -20,8 +20,8 @@
   </view>
 
   <view wx:if="{{orders.length === 0}}" class="empty panel">
-    <text class="empty-title">还没有订单</text>
-    <text class="empty-copy">用户端完成模拟下单后，这里会出现花店制作单。</text>
+    <text class="empty-title">还没有已支付订单</text>
+    <text class="empty-copy">用户完成微信支付后，订单会出现在这里。</text>
   </view>
 
   <view wx:for="{{orders}}" wx:key="id" class="order panel">
@@ -44,12 +44,14 @@
 
       <view class="order-info">
         <text class="order-name">{{item.specs.palette.name}} {{item.specs.flower.name}}</text>
+        <text class="info-line">副花：{{item.specs.filler.name}}</text>
         <text class="info-line">场景：{{item.specs.scenario.name}}</text>
         <text class="info-line">版型：{{item.specs.layout.name}}</text>
         <text class="info-line">包装：{{item.specs.wrapper.name}}</text>
         <text class="info-line">配送：{{item.deliveryTime}}</text>
         <text class="info-line">地址：{{item.address}}</text>
         <text class="info-line">收花人：{{item.receiver}} {{item.phone}}</text>
+        <text class="info-line">支付：{{item.paymentStatus}}</text>
         <text class="info-line">结算：{{item.settlementStatus}}</text>
         <text class="message">“{{item.message}}”</text>
       </view>
@@ -59,8 +61,8 @@
       <button wx:if="{{item.showAccept}}" class="secondary-button action-button" data-id="{{item.id}}" data-status="已接单" bindtap="updateStatus">接单</button>
       <button wx:if="{{item.showMaking}}" class="secondary-button action-button" data-id="{{item.id}}" data-status="制作中" bindtap="updateStatus">制作中</button>
       <button wx:if="{{item.showDeliver}}" class="secondary-button action-button" data-id="{{item.id}}" data-status="已配送" bindtap="updateStatus">已配送</button>
-      <button wx:if="{{item.status === '已配送'}}" class="secondary-button action-button" disabled>等待用户确认</button>
-      <button wx:if="{{item.status === '已完成'}}" class="secondary-button action-button" disabled>已完成</button>
+      <button wx:if="{{item.showWaitingConfirm}}" class="secondary-button action-button" disabled>等待用户确认</button>
+      <button wx:if="{{item.showDone}}" class="secondary-button action-button" disabled>已完成</button>
     </view>
   </view>
 </view>
