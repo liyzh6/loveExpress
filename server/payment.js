@@ -133,6 +133,7 @@ function requestWechatPay(method, apiPath, body) {
       headers: {
         "content-type": "application/json",
         Accept: "application/json",
+        "User-Agent": "loveExpress/1.0",
         Authorization: `WECHATPAY2-SHA256-RSA2048 mchid="${mchid}",nonce_str="${nonce}",timestamp="${timestamp}",serial_no="${serialNo}",signature="${signature}"`
       }
     }, (res) => {
