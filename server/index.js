@@ -228,6 +228,44 @@ app.post("/api/count/:action", (req, res) => {
   res.json({ code: 0, data: req.params.action === "inc" ? 2 : 0 });
 });
 
+app.post("/api/register", (req, res, next) => {
+  if (!req.body || !req.body.useWechatProfile) {
+    next();
+    return;
+  }
+  const nickname = String(req.body.nickname || "微信用户").trim();
+  const baseUsername = String(req.body.username || nickname || `微信用户${Date.now()}`).trim();
+  const password = String(req.body.password || "");
+  if (baseUsername.length < 2 || password.length < 8) {
+    res.status(400).json({ message: "请使用微信昵称注册，密码至少8位" });
+    return;
+  }
+  wechat.verifyLoginCode(req.body.wechatCode).then((wechatSession) => {
+    const user = db.withDb((store) => {
+      const existingWechatUser = store.users.find((item) => item.wechatOpenid === wechatSession.openid && item.role === "customer");
+      if (existingWechatUser) return existingWechatUser;
+      let username = baseUsername;
+      let suffix = 1;
+      while (store.users.some((item) => item.username === username && item.role === "customer")) {
+        suffix += 1;
+        username = `${baseUsername}${suffix}`;
+      }
+      const nextUser = db.createUser(username, password, "customer", nickname || username);
+      nextUser.wechatOpenid = wechatSession.openid;
+      nextUser.wechatUnionid = wechatSession.unionid || "";
+      nextUser.nickname = nickname || username;
+      nextUser.avatarUrl = req.body.avatarUrl || "";
+      nextUser.realNameStatus = "微信账号已绑定，未实名";
+      store.users.push(nextUser);
+      logOperation(store, nextUser.id, "user.register", nextUser.id, "用户通过微信 openid 绑定注册");
+      return nextUser;
+    });
+    res.status(201).json({ user: db.publicUser(user), username: user.username });
+  }).catch((error) => {
+    res.status(400).json({ message: error.message || "微信注册失败" });
+  });
+});
+
 app.post("/api/register", (req, res) => {
   const username = String(req.body.username || "").trim();
   const password = String(req.body.password || "");

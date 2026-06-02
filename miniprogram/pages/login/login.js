@@ -1,17 +1,23 @@
 const app = getApp();
 const api = require("../../utils/api.js");
 
+function randomPassword() {
+  return `wx${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+}
+
 Page({
   data: {
     username: "",
-    password: ""
+    password: "",
+    nickname: ""
   },
 
   onLoad() {
     const saved = wx.getStorageSync("lastCustomerLogin") || {};
     this.setData({
       username: saved.username || "",
-      password: saved.password || ""
+      password: saved.password || "",
+      nickname: saved.nickname || ""
     });
   },
 
@@ -23,23 +29,31 @@ Page({
     this.setData({ password: event.detail.value });
   },
 
+  onNicknameInput(event) {
+    this.setData({ nickname: event.detail.value.trim() });
+  },
+
   async register() {
-    if (!this.validateForm()) return;
     try {
+      const profile = await this.getUserProfile();
       const loginRes = await this.wxLogin();
-      await api.request({
+      const nickname = (profile.userInfo && profile.userInfo.nickName) || this.data.nickname || "微信用户";
+      const password = randomPassword();
+      const registerRes = await api.request({
         url: "/api/register",
         method: "POST",
         data: {
-          username: this.data.username,
-          password: this.data.password,
+          useWechatProfile: true,
+          username: nickname,
+          nickname,
+          avatarUrl: profile.userInfo && profile.userInfo.avatarUrl,
+          password,
           wechatCode: loginRes.code
         }
       });
-      wx.setStorageSync("lastCustomerLogin", {
-        username: this.data.username,
-        password: this.data.password
-      });
+      const username = registerRes.username || (registerRes.user && registerRes.user.username) || nickname;
+      wx.setStorageSync("lastCustomerLogin", { username, password, nickname });
+      this.setData({ username, password, nickname });
       wx.showToast({ title: "注册成功", icon: "success" });
     } catch (error) {
       wx.showToast({ title: error.message || "注册失败", icon: "none" });
@@ -60,7 +74,7 @@ Page({
 
   validateForm() {
     if (!this.data.username || !this.data.password) {
-      wx.showToast({ title: "请输入账号和密码", icon: "none" });
+      wx.showToast({ title: "请先注册或输入账号密码", icon: "none" });
       return false;
     }
     return true;
@@ -84,7 +98,8 @@ Page({
       if (role === "customer") {
         wx.setStorageSync("lastCustomerLogin", {
           username: this.data.username,
-          password: this.data.password
+          password: this.data.password,
+          nickname: this.data.nickname
         });
       }
       const pageMap = {
@@ -100,7 +115,18 @@ Page({
 
   wxLogin() {
     return new Promise((resolve, reject) => {
-      wx.login({
+      wx.login({ success: resolve, fail: reject });
+    });
+  },
+
+  getUserProfile() {
+    return new Promise((resolve, reject) => {
+      if (!wx.getUserProfile) {
+        reject(new Error("当前基础库不支持微信资料授权"));
+        return;
+      }
+      wx.getUserProfile({
+        desc: "用于注册并展示你的微信昵称",
         success: resolve,
         fail: reject
       });
