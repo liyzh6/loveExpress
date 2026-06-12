@@ -140,13 +140,14 @@
           <text class="order-id">{{item.id}}</text>
           <text class="muted">{{item.deliveryTime}}</text>
         </view>
-        <text class="status">{{item.status}}</text>
+        <text class="status">{{item.displayStatus}}</text>
       </view>
       <text class="order-name">{{item.specs.palette.name}} {{item.specs.flower.name}} · ¥{{item.totalPrice}}</text>
       <text class="info-line">地址：{{item.address}}</text>
       <text class="info-line">寄语：{{item.message}}</text>
       <text class="info-line">支付：{{item.paymentStatus}}</text>
       <text class="info-line">结算：{{item.settlementStatus}}</text>
+      <button wx:if="{{item.canPay}}" class="primary-button compact" data-id="{{item.id}}" bindtap="payPendingOrder">继续支付</button>
       <button wx:if="{{item.canConfirmReceipt}}" class="primary-button compact" data-id="{{item.id}}" bindtap="confirmReceipt">已收到</button>
       <button wx:if="{{item.canShare}}" class="primary-button compact" data-id="{{item.id}}" bindtap="requestPostReview">申请晒图审核</button>
       <button wx:elif="{{item.postStatusText}}" class="secondary-button compact" disabled>{{item.postStatusText}}</button>

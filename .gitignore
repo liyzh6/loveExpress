@@ -2,6 +2,7 @@ node_modules/
 server/node_modules/
 *.log
 *.rar
+环境变量.json
 /data/
 server/data/*
 !server/data/db.json

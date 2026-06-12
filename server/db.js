@@ -80,7 +80,6 @@ function ensureDbFile() {
 function seedSystemAccounts(db) {
   const seeds = [
     { username: "user001", password: "123456", role: "customer", name: "默认用户", id: "u_1001" },
-    { username: "merchant001", password: "123456", role: "merchant", name: "默认花店", id: "m_1001" },
     { username: "admin001", password: "123456", role: "admin", name: "平台管理员", id: "a_1001" }
   ];
   let changed = false;

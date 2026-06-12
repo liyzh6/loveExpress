@@ -1,25 +1,84 @@
 <view class="page">
   <view class="header">
     <view>
-      <text class="eyebrow">平台端</text>
-      <text class="title">运营与审核</text>
-      <text class="subtitle">模拟平台看全量订单、抽佣和社区内容审核。</text>
+      <text class="eyebrow">平台</text>
+      <text class="title">订单履约与运营</text>
+      <text class="subtitle">接收订单、安排制作配送，并审核用户晒图进入社区。</text>
     </view>
     <button class="logout-button" bindtap="logout">退出</button>
   </view>
 
   <view class="metrics">
     <view class="panel metric">
+      <text class="metric-label">待处理订单</text>
+      <text class="metric-value">{{activeOrderCount}}</text>
+    </view>
+    <view class="panel metric">
       <text class="metric-label">订单流水</text>
       <text class="metric-value">¥{{grossAmount}}</text>
     </view>
     <view class="panel metric">
-      <text class="metric-label">平台抽佣</text>
-      <text class="metric-value">¥{{commissionAmount}}</text>
-    </view>
-    <view class="panel metric">
       <text class="metric-label">待审晒图</text>
       <text class="metric-value">{{pendingPosts.length}}</text>
+    </view>
+  </view>
+
+  <view class="section-title">
+    <text>订单履约</text>
+    <text class="muted">接收订单 - 制作中 - 配送 - 待用户接收 - 完成</text>
+  </view>
+  <view wx:if="{{orders.length === 0}}" class="empty panel">
+    <text class="empty-title">暂无已支付订单</text>
+    <text class="empty-copy">用户完成微信支付后，订单会进入这里等待平台接收。</text>
+  </view>
+  <view wx:for="{{orders}}" wx:key="id" class="card panel">
+    <view class="order-row">
+      <view>
+        <text class="card-title">{{item.id}}</text>
+        <text class="muted">{{item.createdAt}} 创建</text>
+      </view>
+      <text class="status">{{item.status}}</text>
+    </view>
+
+    <view class="order-detail">
+      <image wx:if="{{item.previewImageUrl}}" class="order-image" src="{{item.previewImageUrl}}" mode="aspectFill"></image>
+      <view class="order-copy">
+        <text class="order-name">{{item.specs.palette.name}} {{item.specs.flower.name}} · ¥{{item.totalPrice}}</text>
+        <text class="info-line">副花：{{item.specs.filler.name}}</text>
+        <text class="info-line">版型：{{item.specs.layout.name}} · 包装：{{item.specs.wrapper.name}}</text>
+        <text class="info-line">配送：{{item.deliveryTime}}</text>
+        <text class="info-line">地址：{{item.address}}</text>
+        <text class="info-line">收花人：{{item.receiver}} {{item.phone}}</text>
+        <text class="info-line">寄语：{{item.message}}</text>
+        <text class="info-line">支付：{{item.paymentStatus}} · 结算：{{item.settlementStatus}}</text>
+      </view>
+    </view>
+
+    <view class="actions">
+      <button wx:if="{{item.showAccept}}" class="primary-button action-button" data-id="{{item.id}}" data-status="已接单" bindtap="updateStatus">接收订单</button>
+      <button wx:if="{{item.showMaking}}" class="primary-button action-button" data-id="{{item.id}}" data-status="制作中" bindtap="updateStatus">制作中</button>
+      <button wx:if="{{item.showDeliver}}" class="primary-button action-button" data-id="{{item.id}}" data-status="已配送" bindtap="updateStatus">配送</button>
+      <button wx:if="{{item.showWaitingConfirm}}" class="secondary-button action-button" disabled>待用户接收</button>
+      <button wx:if="{{item.showDone}}" class="secondary-button action-button" disabled>完成订单</button>
+    </view>
+  </view>
+
+  <view class="section-title">
+    <text>晒图审核</text>
+    <text class="muted">通过后展示到用户社区</text>
+  </view>
+  <view wx:if="{{pendingPosts.length === 0}}" class="empty panel">
+    <text class="empty-title">暂无待审核内容</text>
+    <text class="empty-copy">用户确认收到花束后提交的晒图，会出现在这里。</text>
+  </view>
+  <view wx:for="{{pendingPosts}}" wx:key="id" class="card panel">
+    <image class="review-image" src="{{item.fullImageUrl}}" mode="aspectFill"></image>
+    <text class="card-title">{{item.title}}</text>
+    <text class="card-copy">{{item.content}}</text>
+    <text class="muted">订单：{{item.orderId}} · {{item.createdAt}}</text>
+    <view class="actions two">
+      <button class="primary-button action-button" data-id="{{item.id}}" data-status="已通过" bindtap="reviewPost">通过</button>
+      <button class="secondary-button action-button" data-id="{{item.id}}" data-status="已拒绝" bindtap="reviewPost">拒绝</button>
     </view>
   </view>
 
@@ -33,41 +92,5 @@
       <text class="status">{{item.role}}</text>
     </view>
     <text class="info-line">昵称：{{item.name}} · 创建：{{item.createdAt}}</text>
-  </view>
-
-  <view class="section-title">
-    <text>晒图审核</text>
-    <text class="muted">通过后进入用户社区</text>
-  </view>
-  <view wx:if="{{pendingPosts.length === 0}}" class="empty panel">
-    <text class="empty-title">暂无待审核内容</text>
-    <text class="empty-copy">用户在订单完成后申请晒图，这里会出现审核卡片。</text>
-  </view>
-  <view wx:for="{{pendingPosts}}" wx:key="id" class="card panel">
-    <image class="review-image" src="{{item.fullImageUrl}}" mode="aspectFill"></image>
-    <text class="card-title">{{item.title}}</text>
-    <text class="card-copy">{{item.content}}</text>
-    <text class="muted">订单：{{item.orderId}} · {{item.createdAt}}</text>
-    <view class="actions two">
-      <button class="primary-button action-button" data-id="{{item.id}}" data-status="已通过" bindtap="reviewPost">通过</button>
-      <button class="secondary-button action-button" data-id="{{item.id}}" data-status="已拒绝" bindtap="reviewPost">拒绝</button>
-    </view>
-  </view>
-
-  <view class="section-title order-title"><text>全量订单</text></view>
-  <view wx:if="{{orders.length === 0}}" class="empty panel">
-    <text class="empty-title">暂无订单</text>
-    <text class="empty-copy">用户端下单后，平台端会看到订单和抽佣。</text>
-  </view>
-  <view wx:for="{{orders}}" wx:key="id" class="card panel">
-    <view class="order-row">
-      <text class="card-title">{{item.id}}</text>
-      <text class="status">{{item.status}}</text>
-    </view>
-    <text class="card-copy">{{item.specs.palette.name}} {{item.specs.flower.name}} · {{item.receiver}}</text>
-    <text class="info-line">订单金额：¥{{item.totalPrice}} · 平台抽佣：¥{{item.commission}}</text>
-    <text class="info-line">店家可结算：¥{{item.merchantReceivable}} · {{item.settlementStatus}}</text>
-    <text class="info-line">配送时间：{{item.deliveryTime}}</text>
-    <text class="info-line">配送地址：{{item.address}}</text>
   </view>
 </view>

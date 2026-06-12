@@ -53,6 +53,7 @@ function getConfigStatus() {
     WECHAT_PAY_APP_ID: payAppId(),
     WECHAT_PAY_SERIAL_NO: process.env.WECHAT_PAY_SERIAL_NO,
     WECHAT_PAY_PRIVATE_KEY: key,
+    WECHAT_PAY_API_V3_KEY: apiV3Key,
     WECHAT_PAY_NOTIFY_URL: process.env.WECHAT_PAY_NOTIFY_URL
   };
   const missing = Object.keys(required).filter((name) => !required[name]);
@@ -64,7 +65,8 @@ function getConfigStatus() {
   if (key && !privateKeyLooksPem) warnings.push("WECHAT_PAY_PRIVATE_KEY 不是完整的商户 API 私钥 PEM");
   if (privateKeyBody && !/^[A-Za-z0-9+/=]+$/.test(privateKeyBody)) warnings.push("WECHAT_PAY_PRIVATE_KEY 正文包含非 base64 字符，请重新复制 apiclient_key.pem");
   if (process.env.NODE_ENV === "production" && !platformPublicKeyLooksPem) {
-    warnings.push("生产环境建议配置完整的 WECHAT_PAY_PLATFORM_PUBLIC_KEY 用于回调验签");
+    missing.push("WECHAT_PAY_PLATFORM_PUBLIC_KEY");
+    warnings.push("生产环境必须配置完整的 WECHAT_PAY_PLATFORM_PUBLIC_KEY 用于回调验签");
   }
   if (apiV3Key && Buffer.byteLength(apiV3Key) !== 32) {
     warnings.push("WECHAT_PAY_API_V3_KEY 应为 32 字节");
@@ -155,19 +157,30 @@ function requestWechatPay(method, apiPath, body) {
   });
 }
 
+function paymentNotConfiguredResponse(message) {
+  const status = getConfigStatus();
+  return {
+    configured: false,
+    message,
+    missing: status.missing,
+    warnings: status.warnings,
+    checks: status.checks
+  };
+}
+
+function orderAmountFen(order) {
+  return Math.round((Number(order.totalPrice) || 0) * 100);
+}
+
 async function createJsapiPayment(order, openid) {
   const status = getConfigStatus();
   if (!status.configured) {
-    return {
-      configured: false,
-      message: "微信支付未完成配置",
-      missing: status.missing,
-      warnings: status.warnings,
-      checks: status.checks
-    };
+    return paymentNotConfiguredResponse("微信支付未完成配置");
   }
   const appid = payAppId();
   if (!openid) throw new Error("用户未绑定微信 openid，无法发起 JSAPI 支付");
+  const total = orderAmountFen(order);
+  if (total <= 0) throw new Error("订单金额必须大于 0");
   const body = {
     appid,
     mchid: process.env.WECHAT_PAY_MCH_ID,
@@ -175,7 +188,7 @@ async function createJsapiPayment(order, openid) {
     out_trade_no: order.id,
     notify_url: process.env.WECHAT_PAY_NOTIFY_URL,
     amount: {
-      total: Math.round((order.totalPrice || 0) * 100),
+      total,
       currency: "CNY"
     },
     payer: { openid }
@@ -197,24 +210,50 @@ async function createJsapiPayment(order, openid) {
   };
 }
 
+async function queryOrder(outTradeNo) {
+  const status = getConfigStatus();
+  if (!status.configured) {
+    return paymentNotConfiguredResponse("微信支付未完成配置，无法查单");
+  }
+  if (!outTradeNo) throw new Error("缺少商户订单号");
+  const mchid = process.env.WECHAT_PAY_MCH_ID;
+  const path = `/v3/pay/transactions/out-trade-no/${encodeURIComponent(outTradeNo)}?mchid=${encodeURIComponent(mchid)}`;
+  return {
+    configured: true,
+    transaction: await requestWechatPay("GET", path)
+  };
+}
+
+async function closeOrder(outTradeNo) {
+  const status = getConfigStatus();
+  if (!status.configured) {
+    return paymentNotConfiguredResponse("微信支付未完成配置，无法关单");
+  }
+  if (!outTradeNo) throw new Error("缺少商户订单号");
+  const path = `/v3/pay/transactions/out-trade-no/${encodeURIComponent(outTradeNo)}/close`;
+  return {
+    configured: true,
+    closed: await requestWechatPay("POST", path, {
+      mchid: process.env.WECHAT_PAY_MCH_ID
+    })
+  };
+}
+
 async function requestRefund(order, reason) {
   const status = getConfigStatus();
   if (!status.configured) {
-    return {
-      configured: false,
-      message: "微信退款未配置",
-      missing: status.missing,
-      warnings: status.warnings
-    };
+    return paymentNotConfiguredResponse("微信退款未配置");
   }
+  const total = orderAmountFen(order);
+  if (total <= 0) throw new Error("退款金额必须大于 0");
   const body = {
     out_trade_no: order.id,
     out_refund_no: `R${Date.now()}`,
     reason,
     notify_url: process.env.WECHAT_REFUND_NOTIFY_URL,
     amount: {
-      refund: Math.round((order.totalPrice || 0) * 100),
-      total: Math.round((order.totalPrice || 0) * 100),
+      refund: total,
+      total,
       currency: "CNY"
     }
   };
@@ -243,10 +282,12 @@ async function createProfitSharing() {
 }
 
 module.exports = {
+  closeOrder,
   createJsapiPayment,
   createProfitSharing,
   decryptNotifyResource,
   getConfigStatus,
+  queryOrder,
   requestRefund,
   verifyNotifySignature
 };

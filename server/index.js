@@ -7,6 +7,8 @@ const express = require("express");
 const morgan = require("morgan");
 const multer = require("multer");
 
+require("./env").loadLocalEnvFile();
+
 const db = require("./db");
 const payment = require("./payment");
 const storage = require("./storage");
@@ -46,6 +48,27 @@ function markOrderPaid(store, order, detail) {
   return order;
 }
 
+function expectedAmountFen(order) {
+  return Math.round((Number(order.totalPrice) || 0) * 100);
+}
+
+function isSuccessfulWechatTransaction(order, transaction) {
+  if (!transaction || transaction.trade_state !== "SUCCESS") return false;
+  if (transaction.out_trade_no !== order.id) return false;
+  const paidAmount = transaction.amount && Number(transaction.amount.total);
+  return Number.isFinite(paidAmount) && paidAmount >= expectedAmountFen(order);
+}
+
+function attachWechatTransaction(order, transaction) {
+  order.transactionId = transaction.transaction_id || order.transactionId || "";
+  order.wechatTradeState = transaction.trade_state || order.wechatTradeState || "";
+  order.wechatTradeStateDesc = transaction.trade_state_desc || "";
+  order.wechatPayerOpenid = transaction.payer && transaction.payer.openid ? transaction.payer.openid : order.wechatPayerOpenid;
+  order.wechatPaidAmount = transaction.amount && Number.isFinite(Number(transaction.amount.total))
+    ? Number(transaction.amount.total)
+    : order.wechatPaidAmount;
+}
+
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 fs.mkdirSync(PUBLIC_DIR, { recursive: true });
 
@@ -67,8 +90,8 @@ app.post("/api/payments/wechat/notify", express.raw({ type: "application/json" }
     const transaction = payment.decryptNotifyResource(payload.resource);
     db.withDb((store) => {
       const order = store.orders.find((item) => item.id === transaction.out_trade_no);
-      if (order) {
-        order.transactionId = transaction.transaction_id;
+      if (order && isSuccessfulWechatTransaction(order, transaction)) {
+        attachWechatTransaction(order, transaction);
         markOrderPaid(store, order, "微信支付回调确认支付成功");
       }
     });
@@ -326,17 +349,70 @@ app.post("/api/login", async (req, res) => {
   }
 });
 
+app.post("/api/wechat-login", async (req, res) => {
+  try {
+    const wechatSession = await wechat.verifyLoginCode(req.body.wechatCode);
+    const user = db.withDb((store) => {
+      let target = store.users.find((item) => item.role === "customer" && item.wechatOpenid === wechatSession.openid);
+      if (target) return target;
+
+      const suffix = wechatSession.openid.slice(-6) || String(Date.now()).slice(-6);
+      let username = `微信用户${suffix}`;
+      let index = 1;
+      while (store.users.some((item) => item.username === username && item.role === "customer")) {
+        index += 1;
+        username = `微信用户${suffix}${index}`;
+      }
+      const password = crypto.randomBytes(12).toString("hex");
+      target = db.createUser(username, password, "customer", username);
+      target.wechatOpenid = wechatSession.openid;
+      target.wechatUnionid = wechatSession.unionid || "";
+      target.nickname = username;
+      target.realNameStatus = "微信 openid 已绑定";
+      store.users.push(target);
+      logOperation(store, target.id, "user.wechat_login_create", target.id, "用户通过微信登录自动创建账号");
+      return target;
+    });
+    const token = crypto.randomBytes(24).toString("hex");
+    const safeUser = db.publicUser(user);
+    sessions.set(token, safeUser);
+    res.json({ token, user: safeUser });
+  } catch (error) {
+    res.status(400).json({ message: error.message || "微信登录失败" });
+  }
+});
+
+app.post("/api/me/wechat-session", requireRole(["customer"]), async (req, res) => {
+  try {
+    const wechatSession = await wechat.verifyLoginCode(req.body.wechatCode);
+    const user = db.withDb((store) => {
+      const target = store.users.find((item) => item.id === req.user.id && item.role === "customer");
+      if (!target) throw new Error("用户不存在");
+      const usedByOther = store.users.some((item) => item.id !== target.id && item.wechatOpenid === wechatSession.openid);
+      if (usedByOther) throw new Error("该微信账号已绑定其他用户");
+      target.wechatOpenid = wechatSession.openid;
+      target.wechatUnionid = wechatSession.unionid || target.wechatUnionid || "";
+      target.wechatBoundAt = nowIso();
+      logOperation(store, target.id, "user.bind_wechat", target.id, "支付前刷新微信 openid 绑定");
+      return target;
+    });
+    res.json({ user: db.publicUser(user), hasOpenid: Boolean(user.wechatOpenid) });
+  } catch (error) {
+    res.status(400).json({ message: error.message || "微信账号绑定失败" });
+  }
+});
+
 app.get("/api/accounts", requireRole(["admin"]), (req, res) => {
   const store = db.readDb();
   res.json({ users: store.users.map(db.publicUser) });
 });
 
-app.get("/api/orders", requireRole(["customer", "merchant", "admin"]), (req, res) => {
+app.get("/api/orders", requireRole(["customer", "admin"]), (req, res) => {
   autoConfirmExpiredOrders();
   const store = db.readDb();
   const orders = req.user.role === "customer"
     ? store.orders.filter((order) => order.customerId === req.user.id)
-    : store.orders.filter((order) => req.user.role === "admin" || order.paymentStatus === PAYMENT_STATUS.paid || order.status !== ORDER_STATUS.pendingPay);
+    : store.orders;
   res.json({ orders });
 });
 
@@ -372,7 +448,7 @@ app.post("/api/orders", requireRole(["customer"]), (req, res) => {
   }
 });
 
-app.patch("/api/orders/:id/status", requireRole(["merchant", "admin"]), (req, res) => {
+app.patch("/api/orders/:id/status", requireRole(["admin"]), (req, res) => {
   try {
     const order = db.withDb((store) => {
       const target = store.orders.find((item) => item.id === req.params.id);
@@ -401,7 +477,7 @@ function receiveOrder(req, res) {
     const order = db.withDb((store) => {
       const target = store.orders.find((item) => item.id === req.params.id && item.customerId === req.user.id);
       if (!target) throw new Error("订单不存在");
-      if (target.status !== "已配送") throw new Error("店家配送后才能确认收到");
+      if (target.status !== "已配送") throw new Error("平台配送后才能确认收到");
       target.status = "已完成";
       target.settlementStatus = "平台托管，待人工结算";
       target.completedAt = db.localDate();
@@ -534,26 +610,75 @@ app.post("/api/orders/:id/payments/wechat/prepay", requireRole(["customer"]), as
     res.status(404).json({ message: "订单不存在" });
     return;
   }
+  if (order.paymentStatus === PAYMENT_STATUS.paid) {
+    res.json({ configured: true, alreadyPaid: true, order });
+    return;
+  }
+  if (order.status !== ORDER_STATUS.pendingPay || order.paymentStatus !== PAYMENT_STATUS.pending) {
+    res.status(400).json({ message: "当前订单状态不能发起支付" });
+    return;
+  }
   const user = store.users.find((item) => item.id === req.user.id);
   try {
     const result = await payment.createJsapiPayment(order, user && user.wechatOpenid);
+    if (result.configured && result.payment) {
+      db.withDb((nextStore) => {
+        const target = nextStore.orders.find((item) => item.id === order.id && item.customerId === req.user.id);
+        if (target) {
+          target.prepayCreatedAt = nowIso();
+          target.paymentFlow = "wechat_jsapi";
+          logOperation(nextStore, req.user.id, "payment.prepay", target.id, "微信小程序支付预下单成功，等待用户确认支付");
+        }
+      });
+    }
     res.json(result);
   } catch (error) {
     res.status(400).json({ message: error.message || "微信支付下单失败" });
   }
 });
 
-app.post("/api/orders/:id/payments/wechat/success", requireRole(["customer"]), (req, res) => {
+app.post("/api/orders/:id/payments/wechat/success", requireRole(["customer"]), async (req, res) => {
   try {
-    const order = db.withDb((store) => {
-      const target = store.orders.find((item) => item.id === req.params.id && item.customerId === req.user.id);
+    const store = db.readDb();
+    const order = store.orders.find((item) => item.id === req.params.id && item.customerId === req.user.id);
+    if (!order) {
+      res.status(404).json({ message: "订单不存在" });
+      return;
+    }
+    if (order.paymentStatus === PAYMENT_STATUS.paid) {
+      res.json({ order, verified: true, source: "local" });
+      return;
+    }
+
+    const queryResult = await payment.queryOrder(order.id);
+    if (!queryResult.configured) {
+      res.json(Object.assign({ verified: false, order }, queryResult));
+      return;
+    }
+    const transaction = queryResult.transaction;
+    const verified = isSuccessfulWechatTransaction(order, transaction);
+    const updatedOrder = db.withDb((nextStore) => {
+      const target = nextStore.orders.find((item) => item.id === req.params.id && item.customerId === req.user.id);
       if (!target) throw new Error("订单不存在");
-      if (target.paymentStatus === PAYMENT_STATUS.paid) return target;
       target.clientPayConfirmedAt = nowIso();
-      markOrderPaid(store, target, "用户端支付完成，订单进入店家接单流程");
+      attachWechatTransaction(target, transaction);
+      if (verified) {
+        markOrderPaid(nextStore, target, "服务端查单确认微信支付成功，订单进入平台接单流程");
+      } else {
+        logOperation(nextStore, req.user.id, "payment.unverified", target.id, `客户端完成调起，微信查单状态：${transaction.trade_state || "UNKNOWN"}`);
+      }
       return target;
     });
-    res.json({ order });
+    if (!verified) {
+      res.status(202).json({
+        order: updatedOrder,
+        verified: false,
+        tradeState: transaction.trade_state,
+        message: transaction.trade_state_desc || "支付结果待微信回调确认"
+      });
+      return;
+    }
+    res.json({ order: updatedOrder, verified: true, source: "query" });
   } catch (error) {
     res.status(error.message === "订单不存在" ? 404 : 400).json({ message: error.message || "确认支付失败" });
   }
@@ -595,8 +720,8 @@ app.patch("/api/refund-requests/:id/review", requireRole(["admin"]), async (req,
       request.reviewedAt = nowIso();
       request.adminNote = req.body.note || "";
       if (order && req.body.status === "已通过") {
-        order.status = "已退款";
-        order.settlementStatus = "已退款";
+        order.status = "退款中";
+        order.settlementStatus = "退款处理中";
       }
       if (order && req.body.status === "已拒绝") {
         order.status = "已配送";
@@ -607,6 +732,20 @@ app.patch("/api/refund-requests/:id/review", requireRole(["admin"]), async (req,
     });
     if (req.body.status === "已通过" && reviewed.order) {
       reviewed.wechatRefund = await payment.requestRefund(reviewed.order, reviewed.request.reason);
+      db.withDb((store) => {
+        const request = store.refundRequests.find((item) => item.id === req.params.id);
+        const order = request ? store.orders.find((item) => item.id === request.orderId) : null;
+        if (!request || !order) return;
+        if (reviewed.wechatRefund.configured) {
+          request.status = "退款处理中";
+          request.wechatRefundId = reviewed.wechatRefund.refund && reviewed.wechatRefund.refund.refund_id;
+          order.refundRequestedAt = nowIso();
+          order.settlementStatus = "退款处理中，等待微信回调";
+        } else {
+          request.status = "退款待配置";
+          order.settlementStatus = "退款待配置";
+        }
+      });
     }
     res.json(reviewed);
   } catch (error) {

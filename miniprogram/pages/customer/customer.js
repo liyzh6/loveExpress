@@ -286,20 +286,55 @@ Page({
     };
     try {
       const created = await api.request({ url: "/api/orders", method: "POST", data: order });
-      const payRes = await api.request({ url: `/api/orders/${created.order.id}/payments/wechat/prepay`, method: "POST" });
-      if (payRes.configured && payRes.payment) {
-        await this.requestPayment(payRes.payment);
-        await api.request({ url: `/api/orders/${created.order.id}/payments/wechat/success`, method: "POST" });
-      } else {
-        const missing = payRes.missing && payRes.missing.length ? `：${payRes.missing.join(",")}` : "";
-        wx.showToast({ title: `微信支付待配置${missing}`, icon: "none" });
-      }
+      const paymentResult = await this.payOrder(created.order.id);
       this.setData({ activePanel: "orders", receiver: "", phone: "", address: "", addressName: "", latitude: null, longitude: null });
       this.loadOrders();
-      if (payRes.configured) wx.showToast({ title: "下单成功", icon: "success" });
+      if (paymentResult && paymentResult.verified) wx.showToast({ title: "支付成功", icon: "success" });
     } catch (error) {
       wx.showToast({ title: error.message || "下单失败", icon: "none" });
     }
+  },
+
+  async payOrder(orderId) {
+    await this.ensureWechatSession();
+    const payRes = await api.request({ url: `/api/orders/${orderId}/payments/wechat/prepay`, method: "POST" });
+    if (payRes.alreadyPaid) return { verified: true, order: payRes.order };
+    if (!payRes.configured || !payRes.payment) {
+      const missing = payRes.missing && payRes.missing.length ? `：${payRes.missing.join(",")}` : "";
+      wx.showToast({ title: `微信支付待配置${missing}`, icon: "none" });
+      return { verified: false, order: payRes.order };
+    }
+    try {
+      await this.requestPayment(payRes.payment);
+    } catch (error) {
+      wx.showToast({ title: "支付已取消，可在订单中继续支付", icon: "none" });
+      return { verified: false };
+    }
+    const confirmRes = await api.request({ url: `/api/orders/${orderId}/payments/wechat/success`, method: "POST" });
+    if (!confirmRes.verified) {
+      wx.showToast({ title: confirmRes.message || "支付结果确认中", icon: "none" });
+    }
+    return confirmRes;
+  },
+
+  ensureWechatSession() {
+    return new Promise((resolve, reject) => {
+      wx.login({
+        success: async (loginRes) => {
+          try {
+            await api.request({
+              url: "/api/me/wechat-session",
+              method: "POST",
+              data: { wechatCode: loginRes.code }
+            });
+            resolve();
+          } catch (error) {
+            reject(error);
+          }
+        },
+        fail: reject
+      });
+    });
   },
 
   requestPayment(payment) {
@@ -321,7 +356,10 @@ Page({
       const enriched = orders.map((order) => {
         const post = posts.find((item) => item.orderId === order.id);
         const isDone = order.status === "已完成";
+        const displayStatus = order.status === "已配送" ? "待接收花束" : order.status;
         return Object.assign({}, order, {
+          displayStatus,
+          canPay: order.status === "待支付" && order.paymentStatus === "待支付",
           canConfirmReceipt: order.status === "已配送",
           canShare: isDone && !post,
           postStatusText: post ? `晒图${post.status}` : ""
@@ -353,6 +391,17 @@ Page({
       wx.showToast({ title: "已确认收货", icon: "success" });
     } catch (error) {
       wx.showToast({ title: error.message || "确认失败", icon: "none" });
+    }
+  },
+
+  async payPendingOrder(event) {
+    const id = event.currentTarget.dataset.id;
+    try {
+      const result = await this.payOrder(id);
+      await this.loadOrders();
+      if (result && result.verified) wx.showToast({ title: "支付成功", icon: "success" });
+    } catch (error) {
+      wx.showToast({ title: error.message || "支付失败", icon: "none" });
     }
   },
 
